@@ -1,0 +1,65 @@
+.\"	$OpenBSD: ether_aton.3,v 1.1 2019/08/30 18:33:17 deraadt Exp $
+.\"
+.\" Written by roland@frob.com.  Public domain.
+.\"
+.Dd $Mdocdate: December 29 2019 $
+.Dt AX25_ATON 3
+.Os
+.Sh NAME
+.Nm ax25_aton ,
+.Nm ax25_ntoa
+.Nd convert AX.25 address representation
+.Sh SYNOPSIS
+.In sys/types.h
+.In netax25/if_ax25.h
+.Ft char *
+.Fn ax25_ntoa "struct ax25_addr *a"
+.Ft struct ax25_addr *
+.Fn ax25_aton "const char *s"
+.Sh DESCRIPTION
+AX.25 addresses are represented by the
+following structure:
+.Bd -literal -offset indent
+struct ax25_addr {
+        u_int8_t  ax25_addr_octet[AX25_ADDR_LEN];
+};
+.Ed
+.Pp
+The
+.Fn ax25_ntoa
+function converts this structure into an
+.Xr ascii 7
+string of the form
+.Dq XXXXXX Ns Op -nn ,
+consisting of at most 6 uppercase letters or digits numbers separated
+by colons, followed by an optional dash and two digits for the SSID.
+It returns a pointer to a static buffer that is reused for each call.
+The string may be shorter if the callsign portion of the address is less
+than 6 characters.
+SSIDs are not zero-padded and a zero SSID will simply be omitted.
+The
+.Fn ax25_aton
+converts an
+.Xr ascii 7
+string of the same form and to a structure
+containing the 7 octets of the address.
+It returns a pointer to a static structure that is reused for each call.
+.Fn ax25_aton
+will return NULL if the string does not represent a valid address.
+.Sh HISTORY
+A
+.Fn convert_call
+function appeared in the early Linux AX.25 support to convert an ASCII string
+to the network representation.
+.Pp
+.Fn ax25_ntoa
+and
+.Fn ax25_aton
+functions appeared in the libax25-0.0.2 release for Linux although using
+sockaddr data structures including digipeater path information, not restricted
+to a single address.
+.Sh BUGS
+The data space used by these functions is static; if future use
+requires the data, it should be copied before any subsequent calls to
+these functions overwrite it.
+As such, these functions are not thread-safe.

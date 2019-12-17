@@ -1013,6 +1013,8 @@
 ./usr/include/net80211/ieee80211_regdomain.h
 ./usr/include/net80211/ieee80211_rssadapt.h
 ./usr/include/net80211/ieee80211_var.h
+./usr/include/netax25
+./usr/include/netax25/if_ax25.h
 ./usr/include/netdb.h
 ./usr/include/netgroup.h
 ./usr/include/netinet
@@ -2178,6 +2180,7 @@
 ./usr/share/man/man3/auth_subr.3
 ./usr/share/man/man3/authenticate.3
 ./usr/share/man/man3/authnone_create.3
+./usr/share/man/man3/ax25_aton.3
 ./usr/share/man/man3/basename.3
 ./usr/share/man/man3/bcmp.3
 ./usr/share/man/man3/bcopy.3
