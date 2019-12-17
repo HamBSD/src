@@ -998,6 +998,12 @@ ttyprt(struct itty *tp)
 	case NMEADISC:
 		(void)printf("nmea\n");
 		break;
+	case MSTSDISC:
+		(void)printf("msts\n");
+		break;
+	case ENDRUNDISC:
+		(void)printf("endrun\n");
+		break;
 	default:
 		(void)printf("%d\n", tp->t_line);
 		break;
