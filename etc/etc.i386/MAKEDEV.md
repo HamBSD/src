@@ -76,6 +76,7 @@ _DEV(drm, 88)
 _DEV(fdesc, 22)
 _DEV(fuse, 93)
 _DEV(gpio, 83)
+_DEV(gpr, 80)
 _DEV(hotplug, 82)
 _DEV(ipmi, 96)
 _DEV(joy, 26)
@@ -92,6 +93,7 @@ _DEV(rmidi, 52)
 _DEV(speak, 27)
 _DEV(tun, 40)
 _DEV(tap, 94)
+_DEV(axtap, 100)
 _DEV(tuner, 49)
 _DEV(uk, 20)
 _DEV(vi, 44)
@@ -127,6 +129,7 @@ target(all, pty, 0)dnl
 target(all, bio)dnl
 target(all, tun, 0, 1, 2, 3)dnl
 target(all, tap, 0, 1, 2, 3)dnl
+target(all, axtap, 0, 1, 2, 3)dnl
 target(all, xy, 0, 1, 2, 3)dnl
 target(all, rd, 0)dnl
 target(all, cd, 0, 1)dnl

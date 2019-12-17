@@ -65,6 +65,7 @@
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
+#include <netax25/if_ax25.h>
 
 #include "bpfilter.h"
 #if NBPFILTER > 0
@@ -121,6 +122,7 @@ int	tun_output(struct ifnet *, struct mbuf *, struct sockaddr *,
 int	tun_enqueue(struct ifnet *, struct mbuf *);
 int	tun_clone_create(struct if_clone *, int);
 int	tap_clone_create(struct if_clone *, int);
+int	axtap_clone_create(struct if_clone *, int);
 int	tun_create(struct if_clone *, int, int);
 int	tun_clone_destroy(struct ifnet *);
 void	tun_wakeup(struct tun_softc *);
@@ -154,11 +156,15 @@ struct if_clone tun_cloner =
 struct if_clone tap_cloner =
     IF_CLONE_INITIALIZER("tap", tap_clone_create, tun_clone_destroy);
 
+struct if_clone axtap_cloner =
+    IF_CLONE_INITIALIZER("axtap", axtap_clone_create, tun_clone_destroy);
+
 void
 tunattach(int n)
 {
 	if_clone_attach(&tun_cloner);
 	if_clone_attach(&tap_cloner);
+	if_clone_attach(&axtap_cloner);
 }
 
 int
@@ -171,6 +177,12 @@ int
 tap_clone_create(struct if_clone *ifc, int unit)
 {
 	return (tun_create(ifc, unit, TUN_LAYER2));
+}
+
+int
+axtap_clone_create(struct if_clone *ifc, int unit)
+{
+	return (tun_create(ifc, unit, TUN_AX25));
 }
 
 struct tun_list tun_devs_list = SMR_LIST_HEAD_INITIALIZER(tun_list);
@@ -239,7 +251,22 @@ tun_create(struct if_clone *ifc, int unit, int flags)
 
 	if_counters_alloc(ifp);
 
-	if ((flags & TUN_LAYER2) == 0) {
+	if (flags & TUN_LAYER2) {
+		sc->sc_flags |= TUN_LAYER2;
+		ether_fakeaddr(ifp);
+		ifp->if_flags =
+		    (IFF_BROADCAST|IFF_SIMPLEX|IFF_MULTICAST);
+
+		if_attach(ifp);
+		ether_ifattach(ifp);
+	} else if (flags & TUN_AX25) {
+		sc->sc_flags |= TUN_AX25;
+		ifp->if_flags =
+		    (IFF_BROADCAST|IFF_SIMPLEX);
+
+		if_attach(ifp);
+		ax25_ifattach(ifp);
+	} else {
 		ifp->if_output = tun_output;
 		ifp->if_mtu = ETHERMTU;
 		ifp->if_flags = (IFF_POINTOPOINT|IFF_MULTICAST);
@@ -255,14 +282,6 @@ tun_create(struct if_clone *ifc, int unit, int flags)
 #endif
 
 		if_ih_insert(ifp, tun_input, NULL);
-	} else {
-		sc->sc_flags |= TUN_LAYER2;
-		ether_fakeaddr(ifp);
-		ifp->if_flags =
-		    (IFF_BROADCAST|IFF_SIMPLEX|IFF_MULTICAST);
-
-		if_attach(ifp);
-		ether_ifattach(ifp);
 	}
 
 	sigio_init(&sc->sc_sigio);
@@ -320,10 +339,13 @@ tun_clone_destroy(struct ifnet *ifp)
 	klist_invalidate(&sc->sc_wsel.si_note);
 	splx(s);
 
-	if (!ISSET(sc->sc_flags, TUN_LAYER2))
-		if_ih_remove(ifp, tun_input, NULL);
-	else
+	if (ISSET(sc->sc_flags, TUN_LAYER2)) {
 		ether_ifdetach(ifp);
+	} else if (ISSET(sc->sc_flags, TUN_AX25)) {
+		ax25_ifdetach(ifp);
+	} else {
+		if_ih_remove(ifp, tun_input, NULL);
+	}
 
 	if_detach(ifp);
 	sigio_free(&sc->sc_sigio);
@@ -365,6 +387,12 @@ int
 tapopen(dev_t dev, int flag, int mode, struct proc *p)
 {
 	return (tun_dev_open(dev, &tap_cloner, mode, p));
+}
+
+int
+axtapopen(dev_t dev, int flag, int mode, struct proc *p)
+{
+	return (tun_dev_open(dev, &axtap_cloner, mode, p));
 }
 
 int
@@ -432,6 +460,12 @@ tunclose(dev_t dev, int flag, int mode, struct proc *p)
 
 int
 tapclose(dev_t dev, int flag, int mode, struct proc *p)
+{
+	return (tun_dev_close(dev, p));
+}
+
+int
+axtapclose(dev_t dev, int flag, int mode, struct proc *p)
 {
 	return (tun_dev_close(dev, p));
 }
@@ -646,6 +680,12 @@ tapioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
 }
 
 int
+axtapioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
+{
+	return (tun_dev_ioctl(dev, cmd, data));
+}
+
+int
 tun_dev_ioctl(dev_t dev, u_long cmd, void *data)
 {
 	struct tun_softc	*sc;
@@ -762,6 +802,12 @@ tapread(dev_t dev, struct uio *uio, int ioflag)
 }
 
 int
+axtapread(dev_t dev, struct uio *uio, int ioflag)
+{
+	return (tun_dev_read(dev, uio, ioflag));
+}
+
+int
 tun_dev_read(dev_t dev, struct uio *uio, int ioflag)
 {
 	struct tun_softc	*sc;
@@ -817,6 +863,12 @@ tunwrite(dev_t dev, struct uio *uio, int ioflag)
 
 int
 tapwrite(dev_t dev, struct uio *uio, int ioflag)
+{
+	return (tun_dev_write(dev, uio, ioflag, ETHER_ALIGN));
+}
+
+int
+axtapwrite(dev_t dev, struct uio *uio, int ioflag)
 {
 	return (tun_dev_write(dev, uio, ioflag, ETHER_ALIGN));
 }
@@ -931,6 +983,12 @@ tappoll(dev_t dev, int events, struct proc *p)
 }
 
 int
+axtappoll(dev_t dev, int events, struct proc *p)
+{
+	return (tun_dev_poll(dev, events, p));
+}
+
+int
 tun_dev_poll(dev_t dev, int events, struct proc *p)
 {
 	struct tun_softc	*sc;
@@ -965,6 +1023,12 @@ tunkqfilter(dev_t dev, struct knote *kn)
 
 int
 tapkqfilter(dev_t dev, struct knote *kn)
+{
+	return (tun_dev_kqfilter(dev, kn));
+}
+
+int
+axtapkqfilter(dev_t dev, struct knote *kn)
 {
 	return (tun_dev_kqfilter(dev, kn));
 }

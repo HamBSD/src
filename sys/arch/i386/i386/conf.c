@@ -293,6 +293,7 @@ struct cdevsw	cdevsw[] =
 	cdev_switch_init(NSWITCH,switch), /* 97: switch(4) control interface */
 	cdev_fido_init(NFIDO,fido),	/* 98: FIDO/U2F security key */
 	cdev_pppx_init(NPPPX,pppac),	/* 99: PPP Access Concentrator */
+	cdev_switch_init(NTUN,axtap),	/* 100: AX.25 network tunnel */
 };
 int	nchrdev = nitems(cdevsw);
 

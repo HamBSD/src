@@ -42,6 +42,7 @@
 #define TUN_BRDADDR	0x0200
 #define TUN_STAYUP	0x0400
 #define TUN_LAYER2	0x0800
+#define TUN_AX25	0x8000 /* HamBSD specific */
 
 #define	TUN_READY	(TUN_OPEN | TUN_INITED)
 

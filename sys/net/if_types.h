@@ -270,4 +270,7 @@
 #define IFT_PFLOW	0xf9		/* pflow */
 #define IFT_MBIM	0xfa		/* Mobile Broadband Interface Model */
 
+/* HamBSD types... even more badly handled than above */
+#define IFT_AX25	0xff		/* AX.25 Layer 2 */
+
 #endif /* _NET_IF_TYPES_H_ */

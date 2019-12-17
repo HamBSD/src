@@ -125,6 +125,7 @@ _DEV(rmidi, 68)
 _DEV(rnd, 119)
 _DEV(tun, 111)
 _DEV(tap, 135)
+_DEV(axtap, 139)
 _DEV(uk, 60)
 _DEV(uperf, 25)
 _DEV(vi, 44)
@@ -167,6 +168,7 @@ target(all, pty, 0)dnl
 target(all, bio)dnl
 target(all, tun, 0, 1, 2, 3)dnl
 target(all, tap, 0, 1, 2, 3)dnl
+target(all, axtap, 0, 1, 2, 3)dnl
 target(all, xy, 0, 1, 2, 3)dnl
 target(all, rd, 0)dnl
 target(all, cd, 0, 1)dnl

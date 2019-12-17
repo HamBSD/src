@@ -92,6 +92,7 @@
 #	speaker	PC speaker
 #	tun*	Network tunnel driver
 #	tap*	Ethernet tunnel driver
+#	axtap*	AX.25 tunnel driver
 #	tuner*	Tuner devices
 #	uk*	Unknown SCSI devices
 #	video*	Video V4L2 devices
@@ -277,6 +278,10 @@ uk*)
 
 tuner*)
 	M tuner$U c 49 $(($(($U*2))+16)) 644
+	;;
+
+axtap*)
+	M axtap$U c 100 $U 600
 	;;
 
 tap*)
@@ -583,17 +588,17 @@ all)
 	R switch0 switch1 switch2 switch3 ipmi0 ttyVI00 ttyVI10
 	R ttyVI20 ttyVI30 ttyVI40 drm0 drm1 drm2 drm3 nvram gpio0
 	R gpio1 gpio2 bktr0 vnd0 vnd1 vnd2 vnd3 sd0 sd1 sd2 sd3 sd4
-	R sd5 sd6 sd7 sd8 sd9 cd0 cd1 rd0 tap0 tap1 tap2 tap3 tun0
-	R tun1 tun2 tun3 bio pty0 fd1 fd1B fd1C fd1D fd1E fd1F fd1G
-	R fd1H fd0 fd0B fd0C fd0D fd0E fd0F fd0G fd0H diskmap vscsi0
-	R ch0 audio0 audio1 audio2 dt kcov bpf pvbus0 pvbus1 vmm fuse
-	R pppac pppx hotplug ptm local wscons pci0 pci1 pci2 pci3 uall
-	R rmidi0 rmidi1 rmidi2 rmidi3 rmidi4 rmidi5 rmidi6 rmidi7
-	R tuner0 radio0 speaker video0 video1 uk0 random lpa0 lpa1
-	R lpa2 lpt0 lpt1 lpt2 tty00 tty01 tty02 tty03 tty04 tty05
-	R tty06 tty07 tty08 tty09 tty0a tty0b ttyc0 ttyc1 ttyc2 ttyc3
-	R ttyc4 ttyc5 ttyc6 ttyc7 apm pf pctr wd0 wd1 wd2 wd3 std st0
-	R st1 fd
+	R sd5 sd6 sd7 sd8 sd9 cd0 cd1 rd0 axtap0 axtap1 axtap2 axtap3
+	R tap0 tap1 tap2 tap3 tun0 tun1 tun2 tun3 bio pty0 fd1 fd1B
+	R fd1C fd1D fd1E fd1F fd1G fd1H fd0 fd0B fd0C fd0D fd0E fd0F
+	R fd0G fd0H diskmap vscsi0 ch0 audio0 audio1 audio2 dt kcov
+	R bpf pvbus0 pvbus1 vmm fuse pppac pppx hotplug ptm local
+	R wscons pci0 pci1 pci2 pci3 uall rmidi0 rmidi1 rmidi2 rmidi3
+	R rmidi4 rmidi5 rmidi6 rmidi7 tuner0 radio0 speaker video0
+	R video1 uk0 random lpa0 lpa1 lpa2 lpt0 lpt1 lpt2 tty00 tty01
+	R tty02 tty03 tty04 tty05 tty06 tty07 tty08 tty09 tty0a tty0b
+	R ttyc0 ttyc1 ttyc2 ttyc3 ttyc4 ttyc5 ttyc6 ttyc7 apm pf pctr
+	R wd0 wd1 wd2 wd3 std st0 st1 fd
 	;;
 
 wd*|sd*)

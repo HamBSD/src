@@ -30,8 +30,9 @@
 .Dt TAP 4
 .Os
 .Sh NAME
+.Nm axtap ,
 .Nm tap
-.Nd Ethernet tunnel pseudo-device
+.Nd Link-layer tunnel pseudo-devices
 .Sh SYNOPSIS
 .Cd "pseudo-device tun"
 .Pp
@@ -39,8 +40,10 @@
 .In net/if_tun.h
 .Sh DESCRIPTION
 The
-.Nm
-driver provides an Ethernet interface pseudo-device.
+.Nm axtap
+and
+.Nm tap
+drivers provide an AX.25 and Ethernet interface pseudo-device respectively.
 Packets sent to this interface can be read by a userland process
 and processed as desired.
 Packets written by the userland process are injected back into
@@ -51,7 +54,7 @@ A
 interface can be created at runtime using the
 .Ic ifconfig tap Ns Ar N Ic create
 command or by opening the character special device
-.Pa /dev/tapN .
+.Pf /dev/ Op ax Pa tapN .
 .Pp
 Each device has an exclusive open property: it cannot be opened
 if it is already open and in use by another process.

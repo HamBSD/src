@@ -592,6 +592,7 @@ cdev_decl(pf);
 
 cdev_decl(tun);
 cdev_decl(tap);
+cdev_decl(axtap);
 cdev_decl(switch);
 cdev_decl(pppx);
 cdev_decl(pppac);
