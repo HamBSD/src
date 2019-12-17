@@ -1,0 +1,40 @@
+.Dd October 11, 2019
+.Dt MYCALLSIGN 5
+.Os
+.Sh NAME
+.Nm mycallsign
+.Nd system default callsign
+.Sh DESCRIPTION
+The
+.Nm mycallsign
+file is used as the system default callsign for radio applications, for example
+.Xr aprsd 8
+or
+.Xr iclcd 8 .
+.Pp
+For amateur radio usage, the file contains the callsign to be used for
+identification purposes according to the conditions of your amateur radio
+license.
+This this could include a prefix, core callsign, a regional locator, and
+suffix.
+.Pp
+If used for another purpose, the license requirements may be different or you
+may use tactical callsigns.
+.Pp
+Unless using AX.25 or APRS, the exact format of the callsign is not prescribed
+by the file format beyond that it must only contain printable
+.Xr ascii 7
+characters.
+.Pp
+If using AX.25 or APRS then the callsign must consist of at least 3 and at most
+6 characters.
+It can only contain uppercase letters and numbers.
+.Sh FILES
+.Bl -tag -width "/etc/mycallsign" -compact
+.It Pa /etc/mycallsign
+.El
+.Sh SEE ALSO
+.Xr heard 1 ,
+.Xr heard 5 ,
+.Xr aprsd 8 ,
+.Xr iclcd 8
