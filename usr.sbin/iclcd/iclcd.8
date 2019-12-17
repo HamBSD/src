@@ -1,0 +1,81 @@
+.Dd October 7, 2019
+.Dt ICLCD 8
+.Os
+.Sh NAME
+.Nm iclcd
+.Nd identification compliant with license conditions daemon
+.Sh SYNOPSIS
+.Nm
+.Op Fl Dn
+.Op Fl i Ar interface
+.Op Fl p Ar period
+.Sh DESCRIPTION
+.Nm
+sends
+.Em hamdex
+identification frames using the system default callsign, see
+.Xr mycallsign 5 .
+It will also listen for identification frames on the specified
+interface and record information heard in the
+.Xr heard 5
+database.
+.Pp
+In normal operation,
+.Nm
+forks a copy of itself and runs in the background.
+Anomolies and errors are reported via
+.Xr syslog 3 .
+.Pp
+.Nm
+is usually started at boot time, and can be enabled by
+setting the following in
+.Pa /etc/rc.conf.local :
+.Pp
+.Dl iclcd_flags=\&"\&"
+.Pp
+See
+.Xr rc 8
+and
+.Xr rc.conf 8
+for more information on the boot process
+and enabling daemons.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+.It Fl n
+Do not send beacons, only listen.
+.It Fl i Ar interface
+Interface name to broadcast ident frames (default: ekiss0).
+.It Fl p Ar period
+Period in seconds between broadcasts (default: 60).
+.El
+.Sh FILES
+.Bl -tag -width /etc/mycallsign -compact
+.It Pa /etc/mycallsign
+System default callsign
+.It Pa /var/db/heard
+Heard stations database
+.El
+.Sh SEE ALSO
+.Xr heard 1 ,
+.Xr ekiss 4 ,
+.Xr heard 5 ,
+.Xr mycallsign 5 ,
+.Xr hamdex 7
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@fsfe.org
+for the public domain.
+.Sh CAVEATS
+It is not currently possible to broadcast identification on multiple interfaces,
+or listen for broadcasts on multiple interfaces.
+It is also required that identification transmit and receive must be on the
+same interface.
+.Sh DISCLAIMER
+This may not be enough to comply with your local laws regarding identification
+of amateur radio transmissions.
+This manual page is not legal advice.

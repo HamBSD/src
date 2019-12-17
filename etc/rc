@@ -585,7 +585,7 @@ start_daemon ldomd sshd switchd snmpd ldpd ripd ospfd ospf6d bgpd ifstated
 start_daemon relayd dhcpd dhcrelay mrouted dvmrpd radiusd eigrpd route6d
 start_daemon rad hostapd lpd smtpd slowcgi httpd ftpd
 start_daemon ftpproxy ftpproxy6 tftpd tftpproxy identd inetd rarpd bootparamd
-start_daemon rbootd mopd vmd spamd spamlogd sndiod
+start_daemon rbootd mopd vmd spamd spamlogd sndiod iclcd
 echo '.'
 
 # If rc.firsttime exists, run it just once, and make sure it is deleted.

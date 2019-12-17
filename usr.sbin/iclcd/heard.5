@@ -1,0 +1,69 @@
+.Dd October 7, 2019
+.Dt HEARD 5
+.Os
+.Sh NAME
+.Nm heard
+.Nd heard stations database
+.Sh DESCRIPTION
+The
+.Nm
+file maps Ethernet addresses to call signs.
+The format is intended to be somewhat human readable to allow for debugging
+however this format should never be written or edited by a human.
+It is expected that this file will be maintained by
+.Xr iclcd 8 .
+.Pp
+Lines consist of the following fields:
+.Bl -item -offset indent -compact
+.It
+Ethernet address
+.It
+Station callsign
+.It
+Flags
+.It
+First heard timestamp
+.It
+Last heard timestamp
+.El
+.Pp
+Fields are seperated by a horizontal tab character (hex value 0x09) and lines
+are seperated by a newline character (hex value 0x0a).
+.Ss Field Details
+.Bl -tag -width Ds
+.It Ethernet address
+Ethernet addresses are expressed as six hexadecimal numbers separated by
+colons.
+The functions described in
+.Xr ether_aton 3
+can read and produce this format.
+.It Station callsign
+The station callsign does not have a fixed format and is treated as an
+opaque
+.Xr ascii 7
+string.
+It will only consist of printable characters and must contain at least
+one character, but no guarantees are made beyond this.
+.It Flags
+The station flags are expressed as a decimal number.
+The flags are described in
+.Xr hamdex 7 .
+.It First heard timestamp
+The time that the station was first heard is expressed as a decimal
+number of seconds since 0 hours, 0 minutes, 0 seconds, January 1, 1970,
+Coordinated Universal Time (UTC).
+.It Last heard timestamp
+The time that the station was last heard, expressed as above.
+.El
+.Sh FILES
+.Bl -tag -width /var/db/heard -compact
+.It Pa /var/db/heard
+.El
+.Sh SEE ALSO
+.Xr heard 1 ,
+.Xr iclcd 8
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@fsfe.org

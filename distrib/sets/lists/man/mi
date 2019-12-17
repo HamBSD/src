@@ -2120,6 +2120,7 @@
 ./usr/share/man/man5/genassym.cf.5
 ./usr/share/man/man5/gettytab.5
 ./usr/share/man/man5/group.5
+./usr/share/man/man5/heard.5
 ./usr/share/man/man5/hostapd.conf.5
 ./usr/share/man/man5/hostname.if.5
 ./usr/share/man/man5/hosts.5
@@ -2340,6 +2341,7 @@
 ./usr/share/man/man8/i386/memconfig.8
 ./usr/share/man/man8/i386/pxeboot.8
 ./usr/share/man/man8/i386/wsmoused.8
+./usr/share/man/man8/iclcd.8
 ./usr/share/man/man8/identd.8
 ./usr/share/man/man8/ifconfig.8
 ./usr/share/man/man8/ifstated.8

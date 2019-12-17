@@ -153,6 +153,7 @@
 ./etc/rc.d/hostapd
 ./etc/rc.d/hotplugd
 ./etc/rc.d/httpd
+./etc/rc.d/iclcd
 ./etc/rc.d/identd
 ./etc/rc.d/ifstated
 ./etc/rc.d/iked
@@ -2515,6 +2516,7 @@
 ./usr/sbin/groupmod
 ./usr/sbin/hostapd
 ./usr/sbin/httpd
+./usr/sbin/iclcd
 ./usr/sbin/identd
 ./usr/sbin/ifstated
 ./usr/sbin/ikectl
