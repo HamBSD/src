@@ -2600,6 +2600,7 @@
 ./usr/sbin/revnetgroup
 ./usr/sbin/ripctl
 ./usr/sbin/ripd
+./usr/sbin/rkissd
 ./usr/sbin/rmgroup
 ./usr/sbin/rmt
 ./usr/sbin/rmuser

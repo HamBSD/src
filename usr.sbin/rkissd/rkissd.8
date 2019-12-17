@@ -1,0 +1,60 @@
+.Dd November 30, 2019
+.Dt RKISSD 8
+.Os
+.Sh NAME
+.Nm rkissd
+.Nd Remote KISS daemon
+.Sh SYNOPSIS
+.Nm rkissd
+.Op Fl D
+.Op Fl T
+.Op Ar server Op Ar port
+.Sh DESCRIPTION
+The remote KISS daemon connects to a remote KISS TNC via TCP, creates a
+.Xr pty 4
+and then attaches the
+.Xr kiss 4
+line discipline.
+In effect this allows the use of KISS over TCP with an
+.Xr axkiss 4
+network interface.
+.Pp
+If TCP is used and the connection is broken,
+.Nm
+will reconnect after 30 seconds.
+Keepalives will be used but a broken connection will not be instantly noticed.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+If this option is specified,
+.Nm
+will run in the foregroun and log to
+.Em stderr .
+Additionally, traffic received from the host and the TNC will be logged.
+.It Fl T
+Use TCP (default).
+.It server
+The hostname or IP address to connect to.
+.It port
+The port number to connect to. (default: 8001)
+.Sh SEE ALSO
+.Xr axkiss 4 ,
+.Xr kiss 4 ,
+.Xr pty 4
+.Sh HISTORY
+.Nm
+first appeared in HamBSD XXX.
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@fsfe.org
+for the public domain.
+.Sh BUGS
+There is no support for UDP as used by fldigi.
+It is not clear how to unvis the debug traffic data.
+This manual page does not describe how to use
+.Nm
+with
+.Xr netstart 8 .

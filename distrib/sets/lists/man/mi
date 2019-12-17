@@ -2491,6 +2491,7 @@
 ./usr/share/man/man8/revnetgroup.8
 ./usr/share/man/man8/ripctl.8
 ./usr/share/man/man8/ripd.8
+./usr/share/man/man8/rkissd.8
 ./usr/share/man/man8/rmgroup.8
 ./usr/share/man/man8/rmt.8
 ./usr/share/man/man8/route.8
