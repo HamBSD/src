@@ -57,7 +57,7 @@ EXAMPLES_600=bgpd.conf doas.conf dvmrpd.conf eigrpd.conf hostapd.conf \
 	ripd.conf sasyncd.conf snmpd.conf vm.conf ypldap.conf
 
 # -r-xr-xr-x
-RCDAEMONS=amd apmd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
+RCDAEMONS=amd apmd aprsd bgpd bootparamd cron dhcpd dhcrelay dhcrelay6 dvmrpd \
 	eigrpd ftpd ftpproxy ftpproxy6 hostapd hotplugd httpd iclcd identd ifstated \
 	iked inetd isakmpd iscsid ldapd ldattach ldomd ldpd lockd \
 	lpd mopd mountd mrouted nfsd npppd nsd ntpd ospf6d ospfd \

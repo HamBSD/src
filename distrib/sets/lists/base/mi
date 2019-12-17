@@ -139,6 +139,7 @@
 ./etc/rc.d
 ./etc/rc.d/amd
 ./etc/rc.d/apmd
+./etc/rc.d/aprsd
 ./etc/rc.d/bgpd
 ./etc/rc.d/bootparamd
 ./etc/rc.d/cron
@@ -2484,6 +2485,7 @@
 ./usr/sbin/adduser
 ./usr/sbin/amd
 ./usr/sbin/amq
+./usr/sbin/aprsd
 ./usr/sbin/arp
 ./usr/sbin/authpf
 ./usr/sbin/authpf-noip
