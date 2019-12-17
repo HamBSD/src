@@ -1,0 +1,82 @@
+.Dd October 13, 2019
+.Dt APRSISD 8
+.Os
+.Sh NAME
+.Nm aprsisd
+.Nd APRS-IS daemon
+.Sh SYNOPSIS
+.Nm aprsisd
+.Op Fl D
+.Op Fl i Ar axtapN
+.Op Fl p Ar passcode
+.Op Fl f Ar filter
+.Ar callsign Ns Op Pf - Ar ssid
+.Op Ar server Op Ar port
+.Sh DESCRIPTION
+APRS-IS is an Internet-based network which inter-connects various APRS radio
+networks throughout the world (and space).
+The
+.Nm
+daemon works together with the kernel
+.Xr axtap 4
+driver to establish a connection to an APRS-IS server and present it as a
+virtual network interface.
+.Nm
+can also authenticate to the server and set an optional filter.
+.Pp
+.Nm
+itself will not produce or consume packets.
+A separate application, for example
+.Xr aprsd 8 ,
+must be used for that purpose.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+.It Fl i Ar axtapN
+Use a specific
+.Xr axtap 4
+interface.
+By default the first available interface will be used.
+This option is primarily useful when starting
+.Nm
+during
+.Xr netstart 8 .
+.It Fl p Ar passcode
+Set the passcode to be used for login to the server.
+Contact the software author if you do not know your passcode.
+By default the connection will be unverified, meaning that the connection will
+be receive only (upload to APRS-IS will be forbidden).
+.It Fl f Ar filter
+Set a filter to be used with the server.
+.It Ar callsign Ns Op Pf - Ar ssid
+Set the link-layer address for the interface to the specified callsign and
+SSID.
+This will also be used as the login for APRS-IS.
+It must be a valid AX.25 address.
+The default SSID is 0 (zero).
+.It Ar server Op Ar port
+Set the server to connect to, optionally specifying the TCP port.
+By default the round-robin DNS name
+.Em rotate.aprs2.net
+is used with port 14580.
+The server may be specified by either: a DNS name, a dotted-quad IPv4 address
+or a colon-seperated IPv6 address.
+.El
+.Sh DIAGNOSTICS
+.Nm
+will send status information, warnings and errors to
+.Xr syslogd 8
+using facility daemon and levels err, warn and info.
+.Sh SEE ALSO
+.Xr axtap 4 ,
+.Xr aprsd 8
+.Sh HISTORY
+.Nm
+first appeared in HamBSD XXX.
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@fsfe.org
+for the public domain.

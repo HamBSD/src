@@ -2261,6 +2261,7 @@
 ./usr/share/man/man8/amd64/wsmoused.8
 ./usr/share/man/man8/amq.8
 ./usr/share/man/man8/aprsd.8
+./usr/share/man/man8/aprsisd.8
 ./usr/share/man/man8/arm64/MAKEDEV.8
 ./usr/share/man/man8/arm64/apm.8
 ./usr/share/man/man8/arm64/apmd.8

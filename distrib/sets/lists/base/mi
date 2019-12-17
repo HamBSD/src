@@ -2486,6 +2486,7 @@
 ./usr/sbin/amd
 ./usr/sbin/amq
 ./usr/sbin/aprsd
+./usr/sbin/aprsisd
 ./usr/sbin/arp
 ./usr/sbin/authpf
 ./usr/sbin/authpf-noip
