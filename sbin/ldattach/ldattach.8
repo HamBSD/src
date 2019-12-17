@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: October 2 2014 $
+.Dd $Mdocdate: September 01 2019 $
 .Dt LDATTACH 8
 .Os
 .Sh NAME
@@ -117,6 +117,10 @@ line discipline.
 Attach the
 .Xr nmea 4
 line discipline.
+.It kiss
+Attach the
+.Xr kiss 4
+line discipline.
 .El
 .It Ar device
 Specifies the name of the serial line.
@@ -163,6 +167,7 @@ tty01	"/sbin/ldattach nmea"	unknown	on softcar
 .Xr endrun 4 ,
 .Xr msts 4 ,
 .Xr nmea 4 ,
+.Xr kiss 4 ,
 .Xr pty 4 ,
 .Xr tty 4 ,
 .Xr ttys 5 ,
