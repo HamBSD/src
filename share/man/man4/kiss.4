@@ -1,0 +1,118 @@
+.\"	$OpenBSD$
+.\"
+.\" Copyright (c) 1983, 1991, 1993
+.\"	The Regents of the University of California.  All rights reserved.
+.\" Copyright (c) 2019 Iain R. Leamonth <irl@fsfe.org>
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 3. Neither the name of the University nor the names of its contributors
+.\"    may be used to endorse or promote products derived from this software
+.\"    without specific prior written permission.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\"     From:	@(#)lo.4	8.1 (Berkeley) 6/5/93
+.\"
+.Dd $Mdocdate: September 01 2019 $
+.Dt KISS 4
+.Os
+.Sh NAME
+.Nm kiss
+.Nd KISS line discipline
+.Sh SYNOPSIS
+.Cd "pseudo-device kiss"
+.Sh DESCRIPTION
+The
+.Nm
+line discipline can be attached to serial lines to communicate with a TNC,
+including the following:
+.Bl -bullet
+.It
+AEA PK-88
+.It
+Dire Wolf (using a
+.Xr pty 4 )
+.It
+Kenwood TM-D700E
+.El
+.Pp
+The TNC must already be in KISS mode before the line discipline is activated.
+Refer to the documentation for your TNC to find how to do this.
+It may be possible to perform automatic initialisation using a
+.Xr chat 8
+script.
+When this line discipline is first attached, it will in turn attach to the first
+available
+.Xr ekiss 4
+network interface, or any other interface that has registered with the line
+discipline.
+.Pp
+For general use, once the interface has been created and configured, the line
+discipline can be attached using
+.Xr ldattach 8 .
+For example, assuming the TNC is connected to
+.Pa /dev/cua00
+at 1200 baud:
+.Bd -literal
+$ ldattach -s 1200 kiss cua00
+.Ed
+.Pp
+The line discipline is also enabled by the following sequence:
+.Bd -literal -offset indent
+#include <sys/ioctl.h>
+int ldisc = KISSDISC, fd; ...
+ioctl(fd, TIOCSETD, &ldisc);
+.Ed
+.Pp
+Input and output on the serial line is then intercepted and handled by the
+kernel, and will not be available via the
+.Xr read 2
+and
+.Xr write 2
+system calls.
+.Sh MULTI-DROP KISS
+.Pp
+The line discipline is aware of multi-drop in as far as incoming data on all
+ports will be accepted and will not trigger error conditions. The
+additional commands, acknowledge or polled mode, are not implemented. All data
+will be sent on port 0.
+.Sh SEE ALSO
+.Xr tty 4 ,
+.Xr ldattach 8
+.Sh REFERENCES
+.Bl -bullet
+.It
+.Rs
+.%A Mike Chepponis, K3MC
+.%A Phil Karn, KA9Q
+.%D 1987
+.%T The KISS TNC: A simple Host-to-TNC communications protocol
+.%B ARRL 6th Computer Networking Conference
+.%C Redondo Beach, CA, United States.
+.Re
+.It
+.Rs
+.%A Karl Medcalf, WK5M
+.%D 1991
+.%T Multi-Drop KISS operation
+.%B ARRL 10th Computer Networking Conference
+.%C San Jose, CA, United States.
+.Re
+.El

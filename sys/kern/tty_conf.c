@@ -46,6 +46,7 @@
 #include "nmea.h"
 #include "msts.h"
 #include "endrun.h"
+#include "kiss.h"
 
 #define	ttynodisc ((int (*)(dev_t, struct tty *, struct proc *))enodev)
 #define	ttyerrclose ((int (*)(struct tty *, int flags, struct proc *))enodev)
@@ -104,6 +105,14 @@ struct	linesw linesw[] =
 #if NENDRUN > 0
 	{ endrunopen, endrunclose, ttread, ttwrite, nullioctl,
 	  endruninput, ttstart, ttymodem },		/* 9- ENDRUNDISC */
+#else
+	{ ttynodisc, ttyerrclose, ttyerrio, ttyerrio, nullioctl,
+	  ttyerrinput, ttyerrstart, nullmodem },
+#endif
+
+#if NKISS > 0
+	{ kissopen, kissclose, ttread, ttwrite, nullioctl,
+	  kissinput, ttstart, ttymodem },		/* 10- KISSDISC */
 #else
 	{ ttynodisc, ttyerrclose, ttyerrio, ttyerrio, nullioctl,
 	  ttyerrinput, ttyerrstart, nullmodem },

@@ -84,6 +84,7 @@ pseudo-device	endrun	1	# EndRun line discipline
 pseudo-device	vnd	4	# vnode disk devices
 pseudo-device	ksyms	1	# kernel symbols device
 #pseudo-device	dt		# Dynamic Tracer
+pseudo-device	kiss	1	# KISS TNC line discipline
 
 # clonable devices
 pseudo-device	bpfilter	# packet filter
@@ -110,6 +111,8 @@ pseudo-device	vether		# Virtual ethernet
 pseudo-device	vxlan		# Virtual extensible LAN
 pseudo-device	vlan		# IEEE 802.1Q VLAN
 pseudo-device	switch		# Switch
+pseudo-device	ekiss		# Ethernet-over-KISS
+pseudo-device	axkiss		# AX.25-over-KISS
 
 pseudo-device	bio	1	# ioctl multiplexing device
 

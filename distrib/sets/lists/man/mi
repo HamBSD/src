@@ -1345,6 +1345,7 @@
 ./usr/share/man/man4/eg.4
 ./usr/share/man/man4/ehci.4
 ./usr/share/man/man4/eisa.4
+./usr/share/man/man4/ekiss.4
 ./usr/share/man/man4/el.4
 ./usr/share/man/man4/em.4
 ./usr/share/man/man4/emc.4
@@ -1519,6 +1520,7 @@
 ./usr/share/man/man4/kate.4
 ./usr/share/man/man4/kcov.4
 ./usr/share/man/man4/keynote.4
+./usr/share/man/man4/kiss.4
 ./usr/share/man/man4/km.4
 ./usr/share/man/man4/ksmn.4
 ./usr/share/man/man4/ksyms.4
