@@ -130,6 +130,7 @@ static struct printer printers[] = {
 	{ ieee802_11_radio_if_print,	DLT_IEEE802_11_RADIO },
 	{ ofp_if_print,			DLT_OPENFLOW },
 	{ usbpcap_if_print,		DLT_USBPCAP },
+	{ ax25_if_print,		DLT_AX25 },
 	{ NULL,				0 },
 };
 

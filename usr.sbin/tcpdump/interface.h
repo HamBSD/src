@@ -184,6 +184,9 @@ extern char *dnnum_string(u_short);
 
 struct pcap_pkthdr;
 
+int ax25_encap_print(u_short, u_short, const u_char *, u_int, u_int);
+extern void ax25_if_print(u_char *, const struct pcap_pkthdr *, const u_char *);
+extern void ax25_tryprint(const u_char *, u_int, int);
 extern int ether_encap_print(u_short, const u_char *, u_int, u_int);
 extern int llc_print(const u_char *, u_int, u_int, const u_char *,
 	const u_char *);

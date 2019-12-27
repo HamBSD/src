@@ -34,7 +34,7 @@ LDADD+=	-lpcap -ll -lcrypto
 DPADD+=	${LIBL} ${LIBPCAP} ${LIBCRYPTO}
 
 SRCS=	tcpdump.c addrtoname.c privsep.c privsep_fdpass.c privsep_pcap.c \
-	print-ether.c print-ip.c print-arp.c print-tcp.c print-udp.c \
+	print-ax25.c print-ether.c print-ip.c print-arp.c print-tcp.c print-udp.c \
 	print-atalk.c print-domain.c print-tftp.c print-bootp.c print-nfs.c \
 	print-icmp.c print-sl.c print-ppp.c print-rip.c print-timed.c \
 	print-snmp.c print-ntp.c print-null.c print-ospf.c print-gtp.c \
