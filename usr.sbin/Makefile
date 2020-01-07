@@ -16,7 +16,7 @@ SUBDIR=	ac accton acme-client acpidump adduser amd apm apmd aprsd aprsisd arp \
 	rcctl rdate rdsetroot relayctl relayd repquota ripctl ripd \
 	rkissd rmt route6d rpc.bootparamd rpc.lockd rpc.statd rpki-client \
 	sa sasyncd sensorsd slaacctl slowcgi smtpd \
-	snmpd spamdb switchctl switchd syslogc syslogd sysmerge \
+	snmpd spamdb switchctl switchd sysbuild syslogc syslogd sysmerge \
 	syspatch sysupgrade tcpdrop tcpdump tftp-proxy tftpd tokenadm \
 	tokeninit traceroute trpt unbound unwindctl usbdevs user vmd vmctl \
 	vipw watchdogd wsconscfg wsfontload wsmoused zdump zic

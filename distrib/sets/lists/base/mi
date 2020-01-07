@@ -2624,6 +2624,7 @@
 ./usr/sbin/sshd
 ./usr/sbin/switchctl
 ./usr/sbin/switchd
+./usr/sbin/sysbuild
 ./usr/sbin/sysctl
 ./usr/sbin/syslogc
 ./usr/sbin/syslogd
