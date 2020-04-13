@@ -30,15 +30,29 @@
 .\"
 .\"     From:	@(#)lo.4	8.1 (Berkeley) 6/5/93
 .\"
-.Dd $Mdocdate: September 01 2019 $
+.Dd $Mdocdate: April 03 2020 $
 .Dt KISS 4
 .Os
 .Sh NAME
 .Nm kiss
-.Nd KISS line discipline
+.Nd AX.25-over-KISS network interface and line discipline
 .Sh SYNOPSIS
 .Cd "pseudo-device kiss"
 .Sh DESCRIPTION
+The
+.Nm
+driver consists of a network interface and a line discipline.
+Both must be configured for successful operation.
+.Pp
+A
+.Nm
+network interface can be created at runtime using the
+.Ic ifconfig kiss Ns Ar N Ic create
+command or by setting up a
+.Xr hostname.if 5
+configuration file for
+.Xr netstart 8 .
+.Pp
 The
 .Nm
 line discipline can be attached to serial lines to communicate with a TNC,
@@ -60,9 +74,8 @@ It may be possible to perform automatic initialisation using a
 script.
 When this line discipline is first attached, it will in turn attach to the first
 available
-.Xr ekiss 4
-network interface, or any other interface that has registered with the line
-discipline.
+.Nm
+network interface.
 .Pp
 For general use, once the interface has been created and configured, the line
 discipline can be attached using
@@ -94,9 +107,13 @@ ports will be accepted and will not trigger error conditions. The
 additional commands, acknowledge or polled mode, are not implemented. All data
 will be sent on port 0.
 .Sh SEE ALSO
+.Xr inet 4 ,
 .Xr tty 4 ,
-.Xr ldattach 8
-.Sh REFERENCES
+.Xr hostname.if 5 ,
+.Xr ifconfig 8 ,
+.Xr ldattach 8 ,
+.Xr netstart 8
+.Sh STANDARDS
 .Bl -bullet
 .It
 .Rs

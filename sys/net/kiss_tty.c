@@ -75,7 +75,7 @@ int kissdebug = 0;
 #define KISSCMD_SETHARDWARE	0x06 /* this is not implemented anywhere here */
 #define KISSCMD_RETURN		0xFF /* on all ports */
 
-LIST_HEAD(, ekiss_softc) kiss_softc_list;
+LIST_HEAD(, kiss_softc) kiss_softc_list;
 
 int kiss_count, kiss_nxid;
 
@@ -91,19 +91,15 @@ struct kiss {
 	int			 ks_id;			/* instance id */
 	int			 ks_port;		/* rcv from port */
 	int			 ks_pos;		/* rcv buf position */
-	struct ekiss_softc	*ks_netp;		/* interface sc */
+	struct kiss_softc	*ks_netp;		/* interface sc */
 #define ks_devp			 ks_netp->sc_devp
 };
-
-void kissattach(int dummy) {
-	/* noop */
-}
 
 /* take over a tty and match with a kiss net interface. */
 int
 kissopen(dev_t dev, struct tty *tp, struct proc *p)
 {
-	struct ekiss_softc *sc;
+	struct kiss_softc *sc;
 	struct kiss *ks;
 	int error;
 
@@ -220,7 +216,7 @@ kissinput(int c, struct tty *tp)
 
 /* output a kiss frame with packet data from an mbuf. */
 void
-kissoutput(struct ekiss_softc *sc, struct mbuf *m) {
+kissoutput(struct kiss_softc *sc, struct mbuf *m) {
 	int s;
 	register u_char *cp;
 	struct tty *tp = (struct tty *)sc->sc_devp;
@@ -297,10 +293,10 @@ kissoutput(struct ekiss_softc *sc, struct mbuf *m) {
 }
 
 /* allocate the first available network interface. */
-struct ekiss_softc *
+struct kiss_softc *
 kissalloc(pid_t pid)
 {
-	struct ekiss_softc *sc;
+	struct kiss_softc *sc;
 
 	NET_LOCK();
 	LIST_FOREACH(sc, &kiss_softc_list, sc_list) {
@@ -323,7 +319,7 @@ kissalloc(pid_t pid)
 
 /* register a kiss interface with the line discipline. */
 void
-kissregister(struct ekiss_softc *sc)
+kissregister(struct kiss_softc *sc)
 {
 	NET_LOCK();
 	LIST_INSERT_HEAD(&kiss_softc_list, sc, sc_list);

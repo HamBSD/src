@@ -16,15 +16,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- *  TODO:
- *
- * - Rename to axkiss, expecting a future axkiss interface.
- * - Make sure that both axkiss and axkiss can share kiss(4) line disc.
- * - This might mean not using the same software control block for both.
- */
-
-/* A network interface using Ethernet over a KISS TNC. */
+/* A network interface using AX.25 over a KISS TNC. */
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -55,33 +47,33 @@
 #include <netax25/if_ax25.h>
 #include <net/if_kiss.h>
 
-static int	axkiss_clone_create(struct if_clone *, int);
-static int	axkiss_clone_destroy(struct ifnet *);
+static int	kiss_clone_create(struct if_clone *, int);
+static int	kiss_clone_destroy(struct ifnet *);
 
-static int	axkiss_ioctl(struct ifnet *, u_long, caddr_t);
-static void	axkiss_start(struct ifqueue *);
-static int	axkiss_enqueue(struct ifnet *, struct mbuf *);
+static int	kiss_ioctl(struct ifnet *, u_long, caddr_t);
+static void	kiss_start(struct ifqueue *);
+static int	kiss_enqueue(struct ifnet *, struct mbuf *);
 
-static int	axkiss_media_change(struct ifnet *);
-static void	axkiss_media_status(struct ifnet *, struct ifmediareq *);
+static int	kiss_media_change(struct ifnet *);
+static void	kiss_media_status(struct ifnet *, struct ifmediareq *);
 
-static int	axkiss_up(struct ekiss_softc *);
-static int	axkiss_down(struct ekiss_softc *);
-static int	axkiss_iff(struct ekiss_softc *);
+static int	kiss_up(struct kiss_softc *);
+static int	kiss_down(struct kiss_softc *);
+static int	kiss_iff(struct kiss_softc *);
 
-static struct if_clone axkiss_cloner =
-    IF_CLONE_INITIALIZER("axkiss", axkiss_clone_create, axkiss_clone_destroy);
+static struct if_clone kiss_cloner =
+    IF_CLONE_INITIALIZER("kiss", kiss_clone_create, kiss_clone_destroy);
 
 void
-axkissattach(int count)
+kissattach(int count)
 {
-	if_clone_attach(&axkiss_cloner);
+	if_clone_attach(&kiss_cloner);
 }
 
 static int
-axkiss_clone_create(struct if_clone *ifc, int unit)
+kiss_clone_create(struct if_clone *ifc, int unit)
 {
-	struct ekiss_softc *sc;
+	struct kiss_softc *sc;
 	struct ifnet *ifp;
 
 	sc = malloc(sizeof(*sc), M_DEVBUF, M_WAITOK|M_ZERO|M_CANFAIL);
@@ -93,15 +85,15 @@ axkiss_clone_create(struct if_clone *ifc, int unit)
 	snprintf(ifp->if_xname, sizeof(ifp->if_xname), "%s%d",
 	    ifc->ifc_name, unit);
 
-	ifmedia_init(&sc->sc_media, 0, axkiss_media_change, axkiss_media_status);
+	ifmedia_init(&sc->sc_media, 0, kiss_media_change, kiss_media_status);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
 
 	ifp->if_softc = sc;
 	ifp->if_hardmtu = ETHER_MAX_HARDMTU_LEN;
-	ifp->if_ioctl = axkiss_ioctl;
-	ifp->if_qstart = axkiss_start;
-	ifp->if_enqueue = axkiss_enqueue;
+	ifp->if_ioctl = kiss_ioctl;
+	ifp->if_qstart = kiss_start;
+	ifp->if_enqueue = kiss_enqueue;
 	ifp->if_flags = IFF_BROADCAST | IFF_MULTICAST | IFF_SIMPLEX;
 	ifp->if_xflags = IFXF_CLONED | IFXF_MPSAFE;
 	ifp->if_link_state = LINK_STATE_UP;
@@ -119,15 +111,15 @@ axkiss_clone_create(struct if_clone *ifc, int unit)
 }
 
 static int
-axkiss_clone_destroy(struct ifnet *ifp)
+kiss_clone_destroy(struct ifnet *ifp)
 {
-	struct ekiss_softc *sc = ifp->if_softc;
+	struct kiss_softc *sc = ifp->if_softc;
 
 	NET_LOCK();
 	sc->sc_dead = 1;
 
 	if (ISSET(ifp->if_flags, IFF_RUNNING))
-		axkiss_down(sc);
+		kiss_down(sc);
 	NET_UNLOCK();
 
 	ax25_ifdetach(ifp);
@@ -138,9 +130,9 @@ axkiss_clone_destroy(struct ifnet *ifp)
 }
 
 static int
-axkiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+kiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 {
-	struct ekiss_softc *sc = ifp->if_softc;
+	struct kiss_softc *sc = ifp->if_softc;
 	struct ifreq *ifr = (struct ifreq *)data;
 	int error = 0;
 
@@ -154,12 +146,12 @@ axkiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	case SIOCSIFFLAGS:
 		if (ISSET(ifp->if_flags, IFF_UP)) {
 			if (!ISSET(ifp->if_flags, IFF_RUNNING))
-				error = axkiss_up(sc);
+				error = kiss_up(sc);
 			else
 				error = ENETRESET;
 		} else {
 			if (ISSET(ifp->if_flags, IFF_RUNNING))
-				error = axkiss_down(sc);
+				error = kiss_down(sc);
 		}
 		break;
 
@@ -185,16 +177,16 @@ axkiss_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	}
 
 	if (error == ENETRESET)
-		error = axkiss_iff(sc);
+		error = kiss_iff(sc);
 
 	return (error);
 }
 
 static void
-axkiss_start(struct ifqueue *ifq)
+kiss_start(struct ifqueue *ifq)
 {
 	struct ifnet *ifp = ifq->ifq_if;
-	struct ekiss_softc *sc = ifp->if_softc;
+	struct kiss_softc *sc = ifp->if_softc;
 
 	smr_read_enter();
 	struct mbuf *m;
@@ -204,9 +196,9 @@ axkiss_start(struct ifqueue *ifq)
 }
 
 static int
-axkiss_enqueue(struct ifnet *ifp, struct mbuf *m)
+kiss_enqueue(struct ifnet *ifp, struct mbuf *m)
 {
-	struct ekiss_softc *sc;
+	struct kiss_softc *sc;
 	int error;
 
 	error = 0;
@@ -230,22 +222,22 @@ axkiss_enqueue(struct ifnet *ifp, struct mbuf *m)
 }
 
 static int
-axkiss_media_change(struct ifnet *ifp)
+kiss_media_change(struct ifnet *ifp)
 {
 	return (EOPNOTSUPP);
 }
 
 static void
-axkiss_media_status(struct ifnet *ifp, struct ifmediareq *imr)
+kiss_media_status(struct ifnet *ifp, struct ifmediareq *imr)
 {
-	//struct ekiss_softc *sc = ifp->if_softc;
+	//struct kiss_softc *sc = ifp->if_softc;
 
 	imr->ifm_status = IFM_AVALID;
 	imr->ifm_active = IFM_ETHER | IFM_AUTO | IFM_ACTIVE;
 }
 
 static int
-axkiss_up(struct ekiss_softc *sc)
+kiss_up(struct kiss_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_if;
 
@@ -258,7 +250,7 @@ axkiss_up(struct ekiss_softc *sc)
 }
 
 static int
-axkiss_down(struct ekiss_softc *sc)
+kiss_down(struct kiss_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_if;
 
@@ -269,7 +261,7 @@ axkiss_down(struct ekiss_softc *sc)
 }
 
 static int
-axkiss_iff(struct ekiss_softc *sc)
+kiss_iff(struct kiss_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_if;
 	unsigned int promisc = ISSET(ifp->if_flags, IFF_PROMISC);
