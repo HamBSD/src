@@ -333,4 +333,8 @@ int	endrunopen(dev_t, struct tty *, struct proc *);
 int	endrunclose(struct tty *, int, struct proc *);
 int	endruninput(int, struct tty *);
 
+int	kissopen(dev_t, struct tty *, struct proc *);
+int	kissclose(struct tty *, int, struct proc *);
+int	kissinput(int, struct tty *);
+
 #endif /* _KERNEL */

@@ -110,6 +110,7 @@ pseudo-device	vether		# Virtual ethernet
 pseudo-device	vxlan		# Virtual extensible LAN
 pseudo-device	vlan		# IEEE 802.1Q VLAN
 pseudo-device	switch		# Switch
+pseudo-device	kiss		# AX.25-over-KISS
 
 pseudo-device	bio	1	# ioctl multiplexing device
 

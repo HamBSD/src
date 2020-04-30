@@ -147,5 +147,6 @@ struct tstamps {
 #define	NMEADISC	7		/* NMEA0183 discipline */
 #define	MSTSDISC	8		/* Meinberg time string discipline */
 #define	ENDRUNDISC	9		/* EndRun time format discipline */
+#define	KISSDISC	10		/* KISS TNC discipline */
 
 #endif /* !_SYS_TTYCOM_H_ */
