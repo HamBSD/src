@@ -69,6 +69,7 @@
 #include <net/if_media.h>
 #include <net/if_types.h>
 #include <netinet/in.h>
+#include <netax25/if_ax25.h>
 #include <netinet/in_var.h>
 #include <netinet6/in6_var.h>
 #include <netinet6/nd6.h>
@@ -3300,6 +3301,10 @@ status(int link, struct sockaddr_dl *sdl, int ls)
 	    (sdl->sdl_type == IFT_ETHER || sdl->sdl_type == IFT_CARP))
 		(void)printf("\tlladdr %s\n", ether_ntoa(
 		    (struct ether_addr *)LLADDR(sdl)));
+	if (sdl != NULL && sdl->sdl_alen &&
+	    (sdl->sdl_type == IFT_AX25))
+		(void)printf("\tlladdr %s\n", ax25_ntoa(
+		    (struct ax25_addr *)LLADDR(sdl)));
 
 	sep = '\t';
 #ifndef SMALL
