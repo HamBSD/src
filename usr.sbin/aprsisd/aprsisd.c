@@ -59,7 +59,7 @@ static int	 ax25_input(char *, int);
 static void	 ax25_output(char *, int);
 static char	*tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
 static void	 tnc2_input(char *);
-static int	 tnc2_output(char *);
+static int	 tnc2_output(char *, int);
 static void	*get_in_addr(struct sockaddr *);
 static void	 aprsis_login_str(char *, char *, char *, char *);
 static int	 aprsis_remote_write(char *, ssize_t);
@@ -157,35 +157,41 @@ forbidden_gate_path_address(caddr_t pa)
 		if (aprsis_forbidden_gate_addresses[i] == NULL)
 			break;
 		if (memcmp(pa, aprsis_forbidden_gate_addresses[i], 6) == 0)
-			return 0;
+			return 1;
 	}
 	/* TODO: q constructs? */
-	return 1;
+	return 0;
 }
 
-/*
- * TODO: things get really messed up if the packet buf isn't null terminated!!!!
- */
 static int
 ax25_input(char *pkt, int len)
 {
 	char dst[10], src[10], tl[TNC2_MAXLINE];
-	int dn;
+	int dn, ahlen, tllen;
 	strlcpy(dst, ax25_ntoa((struct ax25_addr *)&pkt[0]), 10);
 	strlcpy(src, ax25_ntoa((struct ax25_addr *)&pkt[7]), 10);
 	snprintf(tl, TNC2_MAXLINE, "%s>%s", src, dst);
 	for (dn = 0; dn < AX25_MAX_DIGIS; ++dn) {
-		if (forbidden_gate_path_address(&pkt[7 * (dn + 1)]))
+		if (forbidden_gate_path_address(&pkt[7 * (dn + 1)])) {
+			log_info("a packet was dropped with forbidden entry in path");
 			return 0;
+		}
 		if (pkt[(7 * (dn + 1)) + 6] & AX25_LAST_MASK)
 			break;
 		strlcat(tl, ",", TNC2_MAXLINE);
 		strlcat(tl, ax25_ntoa((struct ax25_addr *)&pkt[7 * (dn + 2)]), TNC2_MAXLINE);
 	}
 	strlcat(tl, ":", TNC2_MAXLINE);
-	strlcat(tl, &pkt[7 * (dn + 2) + 2], TNC2_MAXLINE);
-	strlcat(tl, "\n", TNC2_MAXLINE);
-	return tnc2_output(tl);
+	ahlen = 7 * (dn + 2) + 2;
+	tllen = strlen(tl);
+	if (tllen + (len - ahlen) + 1 < TNC2_MAXLINE) {
+		memcpy(&tl[tllen], &pkt[ahlen], len - ahlen);
+		tllen += len - ahlen;
+		tl[tllen++] = '\n';
+		return tnc2_output(tl, tllen);
+	}
+	log_warnx("a packet was dropped because the TNC2 representation exceeded TNC2_MAXLINE");
+	return 1;
 }
 
 static void
@@ -267,11 +273,10 @@ tnc2_input(char *s)
 }
 
 static int
-tnc2_output(char *s)
+tnc2_output(char *s, int len)
 {
-	int len = strlen(s);
-	log_debug("snd: %s", s);
-	return aprsis_remote_write(s, strlen(s));
+	log_debug("snd: %s", s); /* TODO: ensure this is printable */
+	return aprsis_remote_write(s, len);
 }
 
 static void *
