@@ -1,0 +1,140 @@
+.\" Copyright (c) 2019 Iain R. Learmonth.
+.\" Copyright (c) 2004 Claudio Jeker <claudio@openbsd.org>
+.\" Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+.\" Copyright (c) 2002 Daniel Hartmeier <dhartmei@openbsd.org>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd October 18, 2019
+.Dt APRSD.CONF 5
+.Os
+.Sh NAME
+.Nm aprsd.conf
+.Nd Automatic Packet Reporting System daemon configuration file
+.Sh DESCRIPTION
+The
+.Xr aprsd 8
+daemon implements an Automatic Packet Reporting System (APRS) tracker and
+digipeater.
+.Pp
+The
+.Nm
+config file is divided into the following main sections:
+.Bl -tag -width xxxx
+.It Sx MACROS
+User-defined variables may be defined and used later, simplifying the
+configuration file.
+.It Sx BEACON CONFIGURATION
+Periodic beacons for position and object reports are set in this section.
+.It Sx DIGIPEATER CONFIGURATION
+Filter rules for digipeating packets are set in this section.
+.El
+.Pp
+The current line can be extended over multiple lines using a backslash
+.Pq Sq \e .
+Comments can be put anywhere in the file using a hash mark
+.Pq Sq # ,
+and extend to the end of the current line.
+Care should be taken when commenting out multi-line text:
+the comment is effective until the end of the entire block.
+.Pp
+Argument names not beginning with a letter, digit, or underscore
+must be quoted.
+.Sh MACROS
+Macros can be defined that will later be expanded in context.
+Macro names must start with a letter, digit, or underscore,
+and may contain any of those characters.
+Macro names may not be reserved words (for example,
+.Ic beacon ,
+.Ic sensor ,
+or
+.Ic longitude ) .
+Macros are not expanded inside quotes.
+.Pp
+For example:
+.Bd -literal -offset indent
+gps="nmea0"
+beacon position sensor $gps
+.Ed
+.Sh BEACON CONFIGURATION
+These define beacons to be transmitted periodically by
+.Xr aprsd 8 .
+.Bl -tag -width Ds
+.It Xo
+.Ic beacon Cm position Op Cm no-timestamp
+.Po
+.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
+.Cm longitude Ar longitude Op Cm east | Cm west
+.Pc
+.Op Cm comment Ar comment
+.Op Cm interval Ar interval
+.Xc
+.Pp
+Register a position beacon to be transmitted every
+.Ar interval
+seconds using either the GPS location given by
+.Ar sensor
+or the fixed
+.Ar latitude
+and
+.Ar longitude .
+Fixed positions
+.Pf ( Ar latitude
+and
+.Ar longitude )
+are given in microdegrees.
+To convert degrees to microdegrees simply multiply by 10^6.
+The number must be positive.
+To indicate a negative latitude or longitude, use the
+.Cm south
+or
+.Cm west
+keywords respectively.
+.Pp
+If the
+.Cm no-timestamp
+option is given then the beacon will use the format that does not contain a
+timestamp, which can be useful for machines that do not have a real-time clock.
+The comment can be set as a free-text field to be included in the position
+report.
+.It Xo
+.Ic beacon Cm object Cm name Ar name
+.Po
+.Cm sensor Ar sensor | Cm latitude Ar latitude Op Cm north | Cm south
+.Cm longitude Ar longitude Op Cm east | Cm west
+.Pc
+.Op Cm comment Ar comment
+.Op Cm interval Ar interval
+.Xc
+.Pp
+Register an object beacon.
+Most of the modifiers for an object beacon behave in the same way as for a
+position beacon.
+.Pp
+Every object beacon must have a name, which must be no more than 6 characters
+and contain only letters and numbers.
+The comment can be set as a free-text field to be included in the object position
+report.
+.El
+.Sh FILES
+.Bl -tag -width "/etc/aprsd.conf" -compact
+.It Pa /etc/aprsd.conf
+.El
+.Sh SEE ALSO
+.Xr ax25 4 ,
+.Xr aprsd 8 ,
+.Xr aprsisd 8
+.Sh HISTORY
+The
+.Nm
+file format first appeared in HamBSD XXX.
