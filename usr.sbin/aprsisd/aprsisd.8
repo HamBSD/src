@@ -1,0 +1,118 @@
+.Dd October 13, 2019
+.Dt APRSISD 8
+.Os
+.Sh NAME
+.Nm aprsisd
+.Nd APRS-IS daemon
+.Sh SYNOPSIS
+.Nm aprsisd
+.Op Fl Dv
+.Op Fl i Ar axtapN
+.Op Fl t | Fl p Ar passcode
+.Op Fl f Ar filter
+.Ar callsign Ns Op Pf - Ar ssid
+.Op Ar server Op Ar port
+.Sh DESCRIPTION
+APRS-IS is an Internet-based network which inter-connects various APRS radio
+networks throughout the world (and space).
+The
+.Nm
+daemon works together with the kernel
+.Xr axtap 4
+driver to establish a connection to an APRS-IS server and present it as a
+virtual network interface.
+.Nm
+can also authenticate to the server and set an optional filter.
+.Pp
+.Nm
+itself will not produce or consume packets.
+A separate application must be used for that purpose.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+.It Fl v
+Verbose log output.
+.It Fl i Ar axtapN
+Use a specific
+.Xr axtap 4
+interface.
+By default the first available interface will be used.
+This option is primarily useful when starting
+.Nm
+during
+.Xr netstart 8 .
+.It Fl t
+Use TLS with client authentication.
+This option cannot be used with passcode authentication.
+Using this option without specifying a server will change the default server to
+.Em ssl.aprs2.net .
+If no port is specified, the default port will be changed to 24580.
+The certificate and key to be used for authentication must be in PEM format and
+placed at
+.Pa /etc/ssl/CALL.crt
+and
+.Pa /etc/ssl/private/CALL.key
+respectively.
+See below for tips on using ARRL LOTW certificates.
+.It Fl p Ar passcode
+Set the passcode to be used for login to the server.
+Contact the software author if you do not know your passcode.
+If no passcode is specified, and TLS is not used, the connection will be
+unverified that it will be read-only (upload to APRS-IS will be forbidden).
+.It Fl f Ar filter
+Set a filter to be used with the server. See
+.Xr aprsis-filter 7
+for more information.
+.It Ar callsign Ns Op Pf - Ar ssid
+Set the link-layer address for the interface to the specified callsign and
+SSID.
+This will also be used as the login for APRS-IS.
+It must be a valid AX.25 address.
+The default SSID, if not specified, is 0 (zero).
+.It Ar server Op Ar port
+Set the server to connect to, optionally specifying the TCP port.
+By default the round-robin DNS name
+.Em rotate.aprs2.net
+is used with port 14580.
+The server may be specified by either: a DNS name, a dotted-quad IPv4 address
+or a colon-seperated IPv6 address.
+.El
+.Sh USING ARRL LOTW CERTIFICATES
+The APRS Tier 2 servers using SSL will automatically authenticate users when an ARRL
+LOTW certificate is presented.
+Certificates may be exported from TQSL in PKCS #12 format, but will need to be
+converted to PEM format for use with
+.Nm .
+The
+.Xr openssl 1
+command can be used to convert the formats:
+.Bd -literal
+$ openssl pkcs12 -in /path/to/CALL.p12 -out /etc/ssl/CALL.crt -nokeys
+$ openssl pkcs12 -in /path/to/CALL.p12 -out /etc/ssl/private/CALL.key -nocerts
+.Ed
+.Pp
+Replace
+.Ql CALL
+with your callsign.
+If you did not use a passphrase when exporting your certificate from TQSL, add
+.Ar -nodes
+to the above two commands.
+.Sh DIAGNOSTICS
+When running as a daemon,
+.Nm
+will send status information, warnings and errors to
+.Xr syslogd 8
+using facility daemon and levels err, warn, info and debug.
+When running in the foreground, messages will be printed to stdout.
+.Sh SEE ALSO
+.Xr axtap 4
+.Sh HISTORY
+.Nm
+first appeared in HamBSD XXX.
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@fsfe.org
+for the public domain.
