@@ -1,4 +1,5 @@
 
+#include <assert.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -34,7 +35,20 @@
  * http://www.aprs-is.net/Connecting.aspx
  */
 
-#define TNC2_MAXLINE 512
+/* "No line may exceed 512 bytes including the CR/LF sequence."
+ * The CR/LF will be sent by tnc2_output so we use 509 for bounds
+ * checking while building up the TNC2 format string, leaving room
+ * for CR/LF/NUL. */
+#define TNC2_MAXLINE 509
+
+/* The following macros provide pointers to structures inside
+ * AX.25 packets:
+ *  p is the pointer to the start of the packet
+ *  n is the number of digipeater hops plus 2 */
+#define AX25_ADDR_PTR(p, n)	 ((struct ax25_addr *)(&p[AX25_ADDR_LEN * n]))
+#define AX25_CTRL(p, n)		 (p[(AX25_ADDR_LEN * (n + 1))])
+#define AX25_PID(p, n)		 (p[(AX25_ADDR_LEN * (n + 1)) + 1])
+#define AX25_INFO_PTR(p, n)	 (&p[(AX25_ADDR_LEN * (n + 1)) + 2])
 
 struct sockaddr_ax25 {
 	u_int8_t		sax_len;
@@ -47,24 +61,27 @@ struct sockaddr_ax25 {
 int			 tap; /* file descriptor for tap device */
 int			 tcp; /* file descriptor for tcp connection */
 int			 usetls; /* command line flag -t */
+int			 bidir; /* bi-directional igate */
+char			*call; /* login name */
+unsigned char		*ncall; /* network format address */
 struct tls		*tls_ctx; /* tls context for tls connection */
 
 static __dead void usage(void);
 static void	 signal_handler(int sig);
 static void	 daemonize(void);
-static char	*call_strip_ssid(char *);
-static char	*aprsis_pass(char *);
-static int	 forbidden_gate_path_address(caddr_t);
-static int	 ax25_input(char *, int);
-static void	 ax25_output(char *, int);
+static char	*call_strip_ssid(void);
+static char	*aprsis_pass(void);
+static int	 forbidden_gate_path_address(const unsigned char *);
+static int	 ax25_input(const unsigned char *, const size_t);
+static int	 tnc2_output(const unsigned char *, const size_t);
+static void	 ax25_output(char *, size_t);
 static char	*tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
 static void	 tnc2_input(char *);
-static int	 tnc2_output(char *, int);
 static void	*get_in_addr(struct sockaddr *);
-static void	 aprsis_login_str(char *, char *, char *, char *);
-static int	 aprsis_remote_write(char *, ssize_t);
-static int	 aprsis_remote_open(char *, char *, char *, char *, char *);
-static void	 aprsis_local_open(char *, char *);
+static void	 aprsis_login_str(char *, char *, char *);
+static int	 aprsis_remote_write(const char *, const size_t);
+static int	 aprsis_remote_open(char *, char *, char *, char *);
+static void	 aprsis_local_open(char *);
 static int	 aprsis_local_shuffle(char *, char *, int);
 static void	 aprsis_loop(void);
 int		 main(int, char **);
@@ -74,7 +91,7 @@ usage(void)
 {
 	extern char *__progname;
 
-	fprintf(stderr, "usage: %s [-D] [-i axtapN] [-p passcode] [-f filter] callsign [server [port]]\n",
+	fprintf(stderr, "usage: %s [-Dv] [-i axtapN] [-p passcode] [-f filter] callsign [server [port]]\n",
 	    __progname);
 	exit(1);
 }
@@ -107,7 +124,7 @@ daemonize(void)
 }
 
 static char *
-call_strip_ssid(char *call)
+call_strip_ssid()
 {
 	static char result[7];
 	int i;
@@ -119,14 +136,32 @@ call_strip_ssid(char *call)
 	return result;
 }
 
+static void
+send_station_capabilities_pkt()
+{
+	unsigned char pkt[22];
+	memcpy(pkt, ax25_aton("APBSDI"), AX25_ADDR_LEN);
+	memcpy(AX25_ADDR_PTR(pkt, 1), ax25_aton("MM0ROR-10"), AX25_ADDR_LEN);
+	AX25_ADDR_PTR(pkt, 1)->ax25_addr_octet[6] |= AX25_LAST_MASK;
+	pkt[14] = 0x03;
+	pkt[15] = 0xf0;
+	pkt[16] = '<';
+	pkt[17] = 'I';
+	pkt[18] = 'G';
+	pkt[19] = 'A';
+	pkt[20] = 'T';
+	pkt[21] = 'E';
+	ax25_output(pkt, 22);
+}
+
 static char *
-aprsis_pass(char *call)
+aprsis_pass()
 {
 	static char pass[6];
 	char *cp;
 	int16_t hash;
 
-	cp = call_strip_ssid(call);
+	cp = call_strip_ssid();
 	hash = 0x73e2;
 	while (cp != '\0') {
 		hash ^= (toupper(*(cp++)) << 8);
@@ -137,11 +172,11 @@ aprsis_pass(char *call)
 	return pass;
 }
 
-static char ax25_nogate[] = { 'N' << 1, 'O' << 1, 'G' << 1, 'A' << 1, 'T' << 1, 'E' << 1 };
-static char ax25_rfonly[] = { 'R' << 1, 'F' << 1, 'O' << 1, 'N' << 1, 'L' << 1, 'Y' << 1 };
-static char ax25_tcpip[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'I' << 1, 'P' << 1, ' ' << 1 };
-static char ax25_tcpxx[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'X' << 1, 'X' << 1, ' ' << 1 };
-static caddr_t aprsis_forbidden_gate_addresses[] = {
+static const unsigned char ax25_nogate[] = { 'N' << 1, 'O' << 1, 'G' << 1, 'A' << 1, 'T' << 1, 'E' << 1 };
+static const unsigned char ax25_rfonly[] = { 'R' << 1, 'F' << 1, 'O' << 1, 'N' << 1, 'L' << 1, 'Y' << 1 };
+static const unsigned char ax25_tcpip[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'I' << 1, 'P' << 1, ' ' << 1 };
+static const unsigned char ax25_tcpxx[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'X' << 1, 'X' << 1, ' ' << 1 };
+static const unsigned char *aprsis_forbidden_gate_addresses[] = {
     ax25_nogate,
     ax25_rfonly,
     ax25_tcpip,
@@ -150,7 +185,7 @@ static caddr_t aprsis_forbidden_gate_addresses[] = {
 };
 
 static int
-forbidden_gate_path_address(caddr_t pa)
+forbidden_gate_path_address(const unsigned char *pa)
 {
 	int i;
 	for (i = 0 ;; i++) {
@@ -164,42 +199,179 @@ forbidden_gate_path_address(caddr_t pa)
 }
 
 static int
-ax25_input(char *pkt, int len)
-{
-	char dst[10], src[10], tl[TNC2_MAXLINE];
-	int dn, ahlen, tllen;
-	strlcpy(dst, ax25_ntoa((struct ax25_addr *)&pkt[0]), 10);
-	strlcpy(src, ax25_ntoa((struct ax25_addr *)&pkt[7]), 10);
-	snprintf(tl, TNC2_MAXLINE, "%s>%s", src, dst);
-	for (dn = 0; dn < AX25_MAX_DIGIS; ++dn) {
-		if (forbidden_gate_path_address(&pkt[7 * (dn + 1)])) {
-			log_info("a packet was dropped with forbidden entry in path");
+ax25_input(const unsigned char *pkt_ax25, const size_t ax25_len) {
+    unsigned char *abuf;
+	unsigned char pkt_tnc2[TNC2_MAXLINE];
+	const unsigned char *ibp, *iep;
+	int al, ai, empty_path = 0, pi, tp = 0;
+
+	bzero(pkt_tnc2, TNC2_MAXLINE);
+
+	log_debug("ax25_input: %zu bytes", ax25_len);
+
+	abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, 1));
+	al = strnlen(abuf, 10);
+	if (tp + al + 3 > TNC2_MAXLINE) { /* 3: used hop, path sep, null terminator */
+		log_debug("dropping packet: can't fit this address into the TNC2 string");
+		return 0;
+	}
+	for (ai = 0; ai < al; ai++)
+		pkt_tnc2[tp++] = abuf[ai];
+	pkt_tnc2[tp++] = '>';
+
+	if ((AX25_ADDR_PTR(pkt_ax25, 1)->ax25_addr_octet[6] & AX25_LAST_MASK) != 0) {
+		/* The source address was the last address */
+		empty_path = 1;
+	}
+
+	for (pi = 0;; pi++) {
+		if (pi == 1)
+			/* We already did the source address above */
+			pi++; 
+		if (pi > AX25_MAX_DIGIS + 2) {
+			log_debug("dropping packet: there are more digis in the path than we care to handle");
 			return 0;
 		}
-		if (pkt[(7 * (dn + 1)) + 6] & AX25_LAST_MASK)
+		if (AX25_ADDR_LEN * (pi + 1) > ax25_len) {
+			log_debug("dropping packet: ran out of packet looking for the last address");
+			return 0;
+		}
+		if (pi != 0) {
+			/* We're looking at the path now */
+			pkt_tnc2[tp++] = ',';
+			if (forbidden_gate_path_address(AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet)) {
+				log_debug("dropping packet: a packet was dropped with forbidden entry in path");
+				return 0;
+			}
+		}
+		abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, pi));
+		al = strnlen(abuf, 10);
+		if (tp + al + 3 > TNC2_MAXLINE) /* 3 = used hop, path sep, null terminator */
+			/* We can't fit this address into the TNC2 string */
+			return 0;
+		for (ai = 0; ai < al; ai++)
+			pkt_tnc2[tp++] = abuf[ai];
+		if (pi > 1 && (AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet[6] & AX25_CR_MASK) != 0)
+			/* This hop has been used */
+			pkt_tnc2[tp++] = '*';
+		if (empty_path) {
+			/* There is no path, so we must fix the path index */
+			pi++;
 			break;
-		strlcat(tl, ",", TNC2_MAXLINE);
-		strlcat(tl, ax25_ntoa((struct ax25_addr *)&pkt[7 * (dn + 2)]), TNC2_MAXLINE);
+		}
+		if ((AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet[6] & AX25_LAST_MASK) != 0)
+			/* This is the last address */
+			break;
 	}
-	strlcat(tl, ":", TNC2_MAXLINE);
-	ahlen = 7 * (dn + 2) + 2;
-	tllen = strlen(tl);
-	if (tllen + (len - ahlen) + 1 < TNC2_MAXLINE) {
-		memcpy(&tl[tllen], &pkt[ahlen], len - ahlen);
-		tllen += len - ahlen;
-		tl[tllen++] = '\n';
-		return tnc2_output(tl, tllen);
+
+	if (AX25_CTRL(pkt_ax25, pi) != 0x03 || AX25_PID(pkt_ax25, pi) != 0xf0) {
+		log_debug("dropping packet: due to non-APRS control/PID 0x%x/0x%x",
+		    AX25_CTRL(pkt_ax25, pi), AX25_PID(pkt_ax25, pi));
+		return 0;
 	}
-	log_warnx("a packet was dropped because the TNC2 representation exceeded TNC2_MAXLINE");
-	return 1;
+
+	if (strncmp(ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, 1)), call, 10) != 0) {
+		/* This packet is not from this station, add a q construct */
+		if (tp + al + 6 > TNC2_MAXLINE) /* ",qAR,call:" = 6 + strlen(call) */
+			/* We can't fit the q construct into the TNC2 string */
+			return 0;
+		pkt_tnc2[tp++] = ',';
+		pkt_tnc2[tp++] = 'q';
+		pkt_tnc2[tp++] = 'A';
+		if (bidir)
+			pkt_tnc2[tp++] = 'R';
+		else
+			pkt_tnc2[tp++] = 'O';
+		pkt_tnc2[tp++] = ',';
+		al = strnlen(call, 10);
+		for (ai = 0; ai < al; ai++)
+			pkt_tnc2[tp++] = call[ai];
+	}
+
+	pkt_tnc2[tp++] = ':';
+
+	/* The absolute maximum that tp can be at this point is 122.
+	 * TNC_MAXLINE is above 500 so up until now we didn't have to
+	 * perform bounds checking, assuming no bugs in the above
+	 * code.
+	 *
+	 * The largest callsign with SSID will be 9 bytes as an ASCII
+	 * string. There is a source address, destination address, and
+	 * a maximum of 8 digipeaters. Each digipeater may also be
+	 * followed by an asterisk if it's "used", and every address
+	 * is followed by a one byte seperator.
+	 *
+	 *   10 addresses x 9 bytes = 90
+	 *   8 digipeaters x 1 byte =  8
+	 *   10 addresses x 1 byte  = 10
+	 *
+	 * Following this path, there is a 3 byte q Construct
+	 * (e.g. qAR), a one byte seperator, and another address with
+	 * a maximum of 9 bytes. Finally, a single colon marks the end
+	 * of the header.
+	 *
+	 *   3 bytes + 1 byte + 9 bytes + 1 byte = 14
+	 *
+	 *   90 + 8 + 10 + 14 = 122 absolute maximum
+	 */
+	assert(tp <= 122);
+
+	/* Now do the information part */
+	ibp = AX25_INFO_PTR(pkt_ax25, pi);
+	iep = pkt_ax25 + ax25_len;
+
+	if (iep - ibp == 0) {
+		log_debug("dropped packet: zero length information part");
+		return 0;
+	}
+
+	if (*ibp == '?') {
+		/* This is a query */
+		if (iep - ibp >= 6 && memcmp(ibp, "?APRS?", 6) == 0) {
+			log_debug("dropped packet: generic query");
+			return 0;
+		} else if (iep - ibp >= 7 && memcmp(ibp, "?IGATE?", 7) == 0) {
+			log_debug("dropped packet: generic query, but we'll reply on the local interface");
+			send_station_capabilities_pkt();
+			return 0;
+		}
+	}
+
+	if (*ibp == '}') {
+		/* This packet has a 3rd-party header */
+		tp = 0;
+		ibp++;
+		log_debug("third party header: stripping rf header");
+		/* TODO: could really do with some validation here because this basically skips everything */
+	}
+
+	if (tp + (iep - ibp) > TNC2_MAXLINE) {
+		log_debug("dropping packet: information part too long");
+		return 0;
+	}
+	memcpy(&pkt_tnc2[tp], ibp, iep - ibp);
+	tp += iep - ibp;
+
+	return tnc2_output(pkt_tnc2, tp);
 }
 
+static int
+tnc2_output(const unsigned char *s, const size_t len)
+{
+	log_debug("snd: %s", s); /* TODO: strvis */
+	aprsis_remote_write(s, len);
+	aprsis_remote_write("\r\n", 2);
+	return len + 2;
+}
+
+
 static void
-ax25_output(char *pkt, int len)
+ax25_output(char *pkt, size_t len)
 {
 	if (write(tap, pkt, len) == -1)
 		fatal("ax25_output: write");
 }
+
 
 static char *
 tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
@@ -254,12 +426,14 @@ tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
 	return pp + 1;
 }
 
+
 static void
 tnc2_input(char *s)
 {
 	char pkt[1024], *payload;
 	struct sockaddr_ax25 saddr, daddr;
-	int dn, len;
+	int dn;
+	size_t len;
 	if ((payload = tnc2_hdr_to_ax25(&saddr, &daddr, s)) == NULL)
 		return;
 	memcpy(pkt, &daddr.sax_addr, sizeof(struct ax25_addr));
@@ -272,13 +446,6 @@ tnc2_input(char *s)
 	ax25_output(pkt, len);
 }
 
-static int
-tnc2_output(char *s, int len)
-{
-	log_debug("snd: %s", s); /* TODO: ensure this is printable */
-	return aprsis_remote_write(s, len);
-}
-
 static void *
 get_in_addr(struct sockaddr *sa)
 {
@@ -288,19 +455,19 @@ get_in_addr(struct sockaddr *sa)
 }
 
 static void
-aprsis_login_str(char *login, char *call, char *pass, char *filter)
+aprsis_login_str(char *login, char *pass, char *filter)
 {
-	memset(login, 0, 512);
-	strlcpy(login, "user ", 512);
-	strlcat(login, call, 512);
-	strlcat(login, " pass ", 512);
-	strlcat(login, pass, 512);
-	strlcat(login, " vers HamBSD-aprsisd 0.0-dev", 512);
+	memset(login, 0, TNC2_MAXLINE);
+	strlcpy(login, "user ", TNC2_MAXLINE);
+	strlcat(login, call, TNC2_MAXLINE);
+	strlcat(login, " pass ", TNC2_MAXLINE);
+	strlcat(login, pass, TNC2_MAXLINE);
+	strlcat(login, " vers HamBSD-aprsisd 0.0-dev", TNC2_MAXLINE);
 	if (filter != NULL) {
-		strlcat(login, " filter ", 512);
-		strlcat(login, filter, 512);
+		strlcat(login, " filter ", TNC2_MAXLINE);
+		strlcat(login, filter, TNC2_MAXLINE);
 	}
-	strlcat(login, "\n", 512);
+	strlcat(login, "\n", TNC2_MAXLINE);
 }
 
 /*
@@ -308,12 +475,12 @@ aprsis_login_str(char *login, char *call, char *pass, char *filter)
  * callsign. The provided buffer must be at least MAXPATHLEN in size.
  */
 static char *
-aprsis_tls_cert_file(char *buf, char *call)
+aprsis_tls_cert_file(char *buf)
 {
 	static char sbuf[MAXPATHLEN];
 	if (buf == NULL)
 		buf = (char *)sbuf;
-	snprintf(buf, MAXPATHLEN, "/etc/ssl/%s.crt", call_strip_ssid(call));
+	snprintf(buf, MAXPATHLEN, "/etc/ssl/%s.crt", call_strip_ssid());
 	return buf;
 }
 
@@ -322,22 +489,24 @@ aprsis_tls_cert_file(char *buf, char *call)
  * callsign. The provided buffer must be at least MAXPATHLEN in size.
  */
 static char *
-aprsis_tls_key_file(char *buf, char *call)
+aprsis_tls_key_file(char *buf)
 {
 	static char sbuf[MAXPATHLEN];
 	if (buf == NULL)
 		buf = (char *)sbuf;
-	snprintf(buf, MAXPATHLEN, "/etc/ssl/private/%s.key", call_strip_ssid(call));
+	snprintf(buf, MAXPATHLEN, "/etc/ssl/private/%s.key", call_strip_ssid());
 	return buf;
 }
 
 static int
-aprsis_remote_write(char *buf, ssize_t len)
+aprsis_remote_write(const char *buf, const size_t len)
 {
-	while (len > 0) {
+	int rem;
+	rem = len;
+	while (rem > 0) {
 		ssize_t ret;
 		if (usetls) {
-			ret = tls_write(tls_ctx, buf, len);
+			ret = tls_write(tls_ctx, buf, rem);
 			if (ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT)
 				continue;
 			if (ret == -1) {
@@ -345,19 +514,19 @@ aprsis_remote_write(char *buf, ssize_t len)
 				return -1;
 			}
 		} else {
-			if (write(tcp, buf, len) == -1) {
+			if (write(tcp, buf, rem) == -1) {
 				log_warn("write");
 				return -1;
 			}
 		}
 		buf += ret;
-		len -= ret;
+		rem -= ret;
 	}
 	return 0;
 }
 
 static int
-aprsis_remote_open(char *server, char *port, char *call, char *pass,
+aprsis_remote_open(char *server, char *port, char *pass,
     char *filter)
 {
 	struct addrinfo hints, *servinfo, *p;
@@ -377,9 +546,9 @@ aprsis_remote_open(char *server, char *port, char *call, char *pass,
 		if (tls_config_set_ciphers(tls_config, "compat") == -1)
 			fatalx("tls_config_set_ciphers: %s", tls_config_error(tls_config));
 
-		aprsis_tls_cert_file(cert_file, call);
+		aprsis_tls_cert_file(cert_file);
 		log_debug("certificate file: %s", cert_file);
-		aprsis_tls_key_file(key_file, call);
+		aprsis_tls_key_file(key_file);
 		log_debug("key file: %s", key_file);
 		if (tls_config_set_ca_file(tls_config, "/etc/ssl/hamcert.pem") == -1)
 			fatalx("tls_config_set_ca_file: %s", tls_config_error(tls_config));
@@ -441,10 +610,10 @@ aprsis_remote_open(char *server, char *port, char *call, char *pass,
 
 	/* undocumented feature, please ignore */
 	if (strcmp(pass, "please") == 0)
-		pass = aprsis_pass(call);
+		pass = aprsis_pass();
 
-	login = malloc(512);
-	aprsis_login_str(login, call, pass, filter);
+	login = malloc(TNC2_MAXLINE);
+	aprsis_login_str(login, pass, filter);
 	aprsis_remote_write(login, strlen(login));
 	log_debug("login string sent");
 
@@ -455,7 +624,7 @@ aprsis_remote_open(char *server, char *port, char *call, char *pass,
 }
 
 static void
-aprsis_local_open(char *interface, char *lladdr)
+aprsis_local_open(char *interface)
 {
 	struct ifreq ifr;
 	struct tuninfo ti;
@@ -482,7 +651,7 @@ aprsis_local_open(char *interface, char *lladdr)
 	strlcpy(ifr.ifr_name, &ifpath[5], sizeof(ifr.ifr_name));
 	ifr.ifr_addr.sa_len = AX25_ADDR_LEN;
 	ifr.ifr_addr.sa_family = AF_LINK;
-	memcpy(ifr.ifr_addr.sa_data, ax25_aton(lladdr), AX25_ADDR_LEN);
+	memcpy(ifr.ifr_addr.sa_data, ax25_aton(call), AX25_ADDR_LEN);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -518,8 +687,9 @@ aprsis_loop(void)
 {
 	struct kevent chlist[2];
 	struct kevent evlist[2];
-	int evi, kq, l_nr, nev, r_pos, r_nr;
-	char r_buf[TNC2_MAXLINE], l_buf[1500], *r_ep;
+	int evi, kq, nr, nev, r_pos;
+	char r_buf[TNC2_MAXLINE], *r_ep;
+	unsigned char l_buf[1500];
 
 	r_pos = 0;
 	bzero(r_buf, TNC2_MAXLINE);
@@ -537,23 +707,23 @@ aprsis_loop(void)
 		for (evi = 0; evi < nev; evi++) {
 			if (evlist[evi].ident == tap) {
 				log_debug("got a tap event");
-				if ((l_nr = read(tap, l_buf, 1500)) == -1 || l_nr == 0)
+				if ((nr = read(tap, l_buf, 1500)) == -1 || nr == 0)
 					fatal("read tap");
-				if (ax25_input(l_buf, l_nr) == -1)
+				if (ax25_input(l_buf, nr) == -1)
+					/* error occured writing to APRS-IS; let's reconnect */
 					return;
-				bzero(l_buf, 1500);
 			} else if (evlist[evi].ident == tcp) {
 				log_debug("got a tcp event");
 				if (usetls) {
-					if (((r_nr = tls_read(tls_ctx, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1)) {
+					if (((nr = tls_read(tls_ctx, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1)) {
 						log_warnx("tls_read: %s", tls_error(tls_ctx));
 						return;
 					}
 				} else {
-					if (((r_nr = read(tcp, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || r_nr == 0)
+					if (((nr = read(tcp, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || nr == 0)
 						return;
 				}
-				r_pos += r_nr;
+				r_pos += nr;
 				if ((r_ep = strchr(r_buf, '\n')) != NULL)
 					r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
 			}
@@ -564,21 +734,22 @@ aprsis_loop(void)
 int
 main(int argc, char **argv)
 {
-	char *call, ch, *filter, *interface, *pass, *port, *server;
+	char ch, *filter, *interface, *pass, *port, *server;
 	const char *errstr;
 	int debug, verbose;
 
 	debug = 0; /* stay in foreground */
 	verbose = 0; /* debug level logging */
 	pass = "-1"; /* APRS-IS login passcode */
-	filter = NULL; /* APRS-IS filter; see: http://www.aprs-is.net/javAPRSFilter.aspx */
+	filter = NULL; /* APRS-IS filter; see aprsis-filter(7) */
 	interface = NULL; /* local axtap interface name */
 	server = "rotate.aprs2.net"; /* APRS-IS server hostname */
 	port = "14580"; /* APRS-IS server port */
 	usetls = 0;
+	bidir = 0;
 
 
-	while ((ch = getopt(argc, argv, "Dvti:p:f:")) != -1) {
+	while ((ch = getopt(argc, argv, "Dvtbi:p:f:")) != -1) {
 		switch (ch) {
 		case 'D':
 			debug = 1;
@@ -590,6 +761,9 @@ main(int argc, char **argv)
 			usetls = 1;
 			server = "ssl.aprs2.net";
 			port = "24580";
+			break;
+		case 'b':
+			bidir = 1;
 			break;
 		case 'i':
 			interface = optarg;
@@ -616,6 +790,9 @@ main(int argc, char **argv)
 	log_debug("log init");
 
 	call = argv[0];
+	ncall = malloc(AX25_ADDR_LEN);
+	memcpy(ncall, ax25_aton(call), AX25_ADDR_LEN);
+
 	if (argc > 1)
 		server = argv[1];
 	if (argc > 2)
@@ -625,16 +802,16 @@ main(int argc, char **argv)
 		daemonize();
 
 	/* the path for the tap device is unknown until we open it */
-	aprsis_local_open(interface, call);
+	aprsis_local_open(interface);
 	if (tap == -1)
 		fatal("tap open");
 
 	if (usetls) {
 		if (unveil("/etc/ssl/hamcert.pem", "r") == -1)
 			fatal("unveil");
-		if (unveil(aprsis_tls_cert_file(NULL, call_strip_ssid(call)), "r") == -1)
+		if (unveil(aprsis_tls_cert_file(NULL), "r") == -1)
 			fatal("unveil");
-		if (unveil(aprsis_tls_key_file(NULL, call_strip_ssid(call)), "r") == -1)
+		if (unveil(aprsis_tls_key_file(NULL), "r") == -1)
 			fatal("unveil");
 		if (pledge("stdio rpath inet dns", NULL) == -1)
 			fatal("pledge");
@@ -647,7 +824,7 @@ main(int argc, char **argv)
 	}
 
 	for (;;) {
-		while (aprsis_remote_open(server, port, call, pass, filter) == -1) {
+		while (aprsis_remote_open(server, port, pass, filter) == -1) {
 			log_warnx("connection failed, reconnecting in 30 seconds...");
 			sleep(30);
 		}
