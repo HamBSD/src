@@ -2751,7 +2751,7 @@ finish_up() {
 
 	# Create /etc/installurl if it does not yet exist.
 	if [[ ! -f /mnt/etc/installurl ]]; then
-		echo "${INSTALL_URL:-https://cdn.openbsd.org/pub/OpenBSD}" \
+		echo "${INSTALL_URL:-https://hambsd.org/pub/HamBSD}" \
 			>/mnt/etc/installurl
 	fi
 
