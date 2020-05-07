@@ -28,35 +28,14 @@
 
 #include <tls.h>
 
+#include "aprsis.h"
+#include "tnc2.h"
 #include "log.h"
 
 /*
  * Much of the APRS-IS protocol has been based on the details found at:
  * http://www.aprs-is.net/Connecting.aspx
  */
-
-/* "No line may exceed 512 bytes including the CR/LF sequence."
- * The CR/LF will be sent by tnc2_output so we use 509 for bounds
- * checking while building up the TNC2 format string, leaving room
- * for CR/LF/NUL. */
-#define TNC2_MAXLINE 509
-
-/* The following macros provide pointers to structures inside
- * AX.25 packets:
- *  p is the pointer to the start of the packet
- *  n is the number of digipeater hops plus 2 */
-#define AX25_ADDR_PTR(p, n)	 ((struct ax25_addr *)(&p[AX25_ADDR_LEN * n]))
-#define AX25_CTRL(p, n)		 (p[(AX25_ADDR_LEN * (n + 1))])
-#define AX25_PID(p, n)		 (p[(AX25_ADDR_LEN * (n + 1)) + 1])
-#define AX25_INFO_PTR(p, n)	 (&p[(AX25_ADDR_LEN * (n + 1)) + 2])
-
-struct sockaddr_ax25 {
-	u_int8_t		sax_len;
-	sa_family_t		sax_family;
-	struct ax25_addr	sax_addr;
-	int8_t			sax_pathlen;
-	struct ax25_addr	sax_path[AX25_MAX_DIGIS];
-};
 
 int			 tap; /* file descriptor for tap device */
 int			 tcp; /* file descriptor for tcp connection */
@@ -70,13 +49,13 @@ static __dead void usage(void);
 static void	 signal_handler(int sig);
 static void	 daemonize(void);
 static char	*call_strip_ssid(void);
+static void	 send_station_capabilities(void);
 static char	*aprsis_pass(void);
 static int	 forbidden_gate_path_address(const unsigned char *);
 static int	 ax25_input(const unsigned char *, const size_t);
 static int	 tnc2_output(const unsigned char *, const size_t);
-static void	 ax25_output(char *, size_t);
-static char	*tnc2_hdr_to_ax25(struct sockaddr_ax25 *, struct sockaddr_ax25 *, char *);
-static void	 tnc2_input(char *);
+static void	 ax25_output(const unsigned char *, const size_t);
+static void	 tnc2_input(const unsigned char *, const size_t);
 static void	*get_in_addr(struct sockaddr *);
 static void	 aprsis_login_str(char *, char *, char *);
 static int	 aprsis_remote_write(const char *, const size_t);
@@ -137,7 +116,7 @@ call_strip_ssid()
 }
 
 static void
-send_station_capabilities_pkt()
+send_station_capabilities()
 {
 	unsigned char pkt[22];
 	memcpy(pkt, ax25_aton("APBSDI"), AX25_ADDR_LEN);
@@ -199,160 +178,34 @@ forbidden_gate_path_address(const unsigned char *pa)
 }
 
 static int
-ax25_input(const unsigned char *pkt_ax25, const size_t ax25_len) {
-    unsigned char *abuf;
+ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25) {
 	unsigned char pkt_tnc2[TNC2_MAXLINE];
-	const unsigned char *ibp, *iep;
-	int al, ai, empty_path = 0, pi, tp = 0;
+	size_t tnc2_len;
 
-	bzero(pkt_tnc2, TNC2_MAXLINE);
+	tnc2_len = ax25_to_tnc2(pkt_tnc2, pkt_ax25, len_ax25);
 
-	log_debug("ax25_input: %zu bytes", ax25_len);
-
-	abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, 1));
-	al = strnlen(abuf, 10);
-	if (tp + al + 3 > TNC2_MAXLINE) { /* 3: used hop, path sep, null terminator */
-		log_debug("dropping packet: can't fit this address into the TNC2 string");
+	switch (tnc2_len) {
+	case 0:
+		/* Packet should be dropped */
 		return 0;
-	}
-	for (ai = 0; ai < al; ai++)
-		pkt_tnc2[tp++] = abuf[ai];
-	pkt_tnc2[tp++] = '>';
-
-	if ((AX25_ADDR_PTR(pkt_ax25, 1)->ax25_addr_octet[6] & AX25_LAST_MASK) != 0) {
-		/* The source address was the last address */
-		empty_path = 1;
-	}
-
-	for (pi = 0;; pi++) {
-		if (pi == 1)
-			/* We already did the source address above */
-			pi++; 
-		if (pi > AX25_MAX_DIGIS + 2) {
-			log_debug("dropping packet: there are more digis in the path than we care to handle");
-			return 0;
-		}
-		if (AX25_ADDR_LEN * (pi + 1) > ax25_len) {
-			log_debug("dropping packet: ran out of packet looking for the last address");
-			return 0;
-		}
-		if (pi != 0) {
-			/* We're looking at the path now */
-			pkt_tnc2[tp++] = ',';
-			if (forbidden_gate_path_address(AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet)) {
-				log_debug("dropping packet: a packet was dropped with forbidden entry in path");
-				return 0;
-			}
-		}
-		abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, pi));
-		al = strnlen(abuf, 10);
-		if (tp + al + 3 > TNC2_MAXLINE) /* 3 = used hop, path sep, null terminator */
-			/* We can't fit this address into the TNC2 string */
-			return 0;
-		for (ai = 0; ai < al; ai++)
-			pkt_tnc2[tp++] = abuf[ai];
-		if (pi > 1 && (AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet[6] & AX25_CR_MASK) != 0)
-			/* This hop has been used */
-			pkt_tnc2[tp++] = '*';
-		if (empty_path) {
-			/* There is no path, so we must fix the path index */
-			pi++;
-			break;
-		}
-		if ((AX25_ADDR_PTR(pkt_ax25, pi)->ax25_addr_octet[6] & AX25_LAST_MASK) != 0)
-			/* This is the last address */
-			break;
-	}
-
-	if (AX25_CTRL(pkt_ax25, pi) != 0x03 || AX25_PID(pkt_ax25, pi) != 0xf0) {
-		log_debug("dropping packet: due to non-APRS control/PID 0x%x/0x%x",
-		    AX25_CTRL(pkt_ax25, pi), AX25_PID(pkt_ax25, pi));
+	case 1:
+		/* This was a general IGate query */
+		send_station_capabilities();
 		return 0;
-	}
-
-	if (strncmp(ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, 1)), call, 10) != 0) {
-		/* This packet is not from this station, add a q construct */
-		if (tp + al + 6 > TNC2_MAXLINE) /* ",qAR,call:" = 6 + strlen(call) */
-			/* We can't fit the q construct into the TNC2 string */
-			return 0;
-		pkt_tnc2[tp++] = ',';
-		pkt_tnc2[tp++] = 'q';
-		pkt_tnc2[tp++] = 'A';
-		if (bidir)
-			pkt_tnc2[tp++] = 'R';
-		else
-			pkt_tnc2[tp++] = 'O';
-		pkt_tnc2[tp++] = ',';
-		al = strnlen(call, 10);
-		for (ai = 0; ai < al; ai++)
-			pkt_tnc2[tp++] = call[ai];
-	}
-
-	pkt_tnc2[tp++] = ':';
-
-	/* The absolute maximum that tp can be at this point is 122.
-	 * TNC_MAXLINE is above 500 so up until now we didn't have to
-	 * perform bounds checking, assuming no bugs in the above
-	 * code.
-	 *
-	 * The largest callsign with SSID will be 9 bytes as an ASCII
-	 * string. There is a source address, destination address, and
-	 * a maximum of 8 digipeaters. Each digipeater may also be
-	 * followed by an asterisk if it's "used", and every address
-	 * is followed by a one byte seperator.
-	 *
-	 *   10 addresses x 9 bytes = 90
-	 *   8 digipeaters x 1 byte =  8
-	 *   10 addresses x 1 byte  = 10
-	 *
-	 * Following this path, there is a 3 byte q Construct
-	 * (e.g. qAR), a one byte seperator, and another address with
-	 * a maximum of 9 bytes. Finally, a single colon marks the end
-	 * of the header.
-	 *
-	 *   3 bytes + 1 byte + 9 bytes + 1 byte = 14
-	 *
-	 *   90 + 8 + 10 + 14 = 122 absolute maximum
-	 */
-	assert(tp <= 122);
-
-	/* Now do the information part */
-	ibp = AX25_INFO_PTR(pkt_ax25, pi);
-	iep = pkt_ax25 + ax25_len;
-
-	if (iep - ibp == 0) {
-		log_debug("dropped packet: zero length information part");
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
+		/* Keep these reserved as special cases. */
 		return 0;
+	default:
+		return tnc2_output(pkt_tnc2, tnc2_len);
 	}
-
-	if (*ibp == '?') {
-		/* This is a query */
-		if (iep - ibp >= 6 && memcmp(ibp, "?APRS?", 6) == 0) {
-			log_debug("dropped packet: generic query");
-			return 0;
-		} else if (iep - ibp >= 7 && memcmp(ibp, "?IGATE?", 7) == 0) {
-			log_debug("dropped packet: generic query, but we'll reply on the local interface");
-			send_station_capabilities_pkt();
-			return 0;
-		}
-	}
-
-	if (*ibp == '}') {
-		/* This packet has a 3rd-party header */
-		tp = 0;
-		ibp++;
-		log_debug("third party header: stripping rf header");
-		/* TODO: could really do with some validation here because this basically skips everything */
-	}
-
-	if (tp + (iep - ibp) > TNC2_MAXLINE) {
-		log_debug("dropping packet: information part too long");
-		return 0;
-	}
-	memcpy(&pkt_tnc2[tp], ibp, iep - ibp);
-	tp += iep - ibp;
-
-	return tnc2_output(pkt_tnc2, tp);
 }
 
 static int
@@ -366,84 +219,54 @@ tnc2_output(const unsigned char *s, const size_t len)
 
 
 static void
-ax25_output(char *pkt, size_t len)
+ax25_output(const unsigned char *pkt, const size_t len)
 {
 	if (write(tap, pkt, len) == -1)
 		fatal("ax25_output: write");
 }
 
-
-static char *
-tnc2_hdr_to_ax25(struct sockaddr_ax25 *saddr, struct sockaddr_ax25 *daddr,
-    char *s)
+static void
+tnc2_input(const unsigned char *pkt_tnc2, size_t tnc2_len)
 {
-	char as[10];
-	struct ax25_addr *addr;
-	int dn, h;
-	char *bp, *ep, *pp;
+	unsigned char pkt_ax25[1024];
+	const unsigned char *payload = NULL;
+	int i, tp;
 
-	if ((pp = strchr(s, ':')) == NULL)
-		return NULL;
-	bp = ep = s;
-	for (dn = -2 ; ep != pp && dn < AX25_MAX_DIGIS ; dn++) {
-		for (ep = bp; ep < pp; ep++)
-			if (*ep == '>' || *ep == ',')
-				break;
-		bzero(as, 10);
-		if (ep - bp < 3 || ep - bp > 9)
-			return NULL;
-		memcpy(as, bp, ep - bp);
-		if ((h = (as[ep - bp - 1] == '*')))
-			as[ep - bp - 1] = '\0';
-		if ((addr = ax25_aton(as)) == NULL)
-			return NULL;
-		saddr->sax_path[dn].ax25_addr_octet[6] |= AX25_RESERVED_MASK;
-		if (h)
-			saddr->sax_path[dn].ax25_addr_octet[6] |= AX25_CR_MASK;
-		switch (dn) {
-		case -2:
-			/* source address */
-			memcpy(&saddr->sax_addr, addr, sizeof(struct ax25_addr));
-			break;
-		case -1:
-			/* destination address */
-			memcpy(&daddr->sax_addr, addr, sizeof(struct ax25_addr));
-			daddr->sax_addr.ax25_addr_octet[6] |= AX25_CR_MASK;
-			break;
-		default:
-			/* digi path */
-			memcpy(&saddr->sax_path[dn], addr, sizeof(struct ax25_addr));
+	memcpy(pkt_ax25, ax25_aton("APBSDI"), AX25_ADDR_LEN);
+	memcpy(AX25_ADDR_PTR(pkt_ax25, 1), ncall, AX25_ADDR_LEN);
+	AX25_ADDR_PTR(pkt_ax25, 1)->ax25_addr_octet[6] |= AX25_LAST_MASK;
+	pkt_ax25[14] = 0x03;
+	pkt_ax25[15] = 0xf0;
+	pkt_ax25[16] = '}';
+
+	/* Identify the start of the payload */
+	for (tp = 0; tp < tnc2_len; tp++) {
+		if (pkt_tnc2[tp] == ':') {
+			payload = &pkt_tnc2[tp];
 			break;
 		}
-		bp = ep + 1;
 	}
-	if (dn == 0) {
-		saddr->sax_addr.ax25_addr_octet[6] |= AX25_LAST_MASK;
-	} else {
-		saddr->sax_path[dn - 1].ax25_addr_octet[6] |= AX25_LAST_MASK;
-	}
-	saddr->sax_pathlen = dn;
-	return pp + 1;
-}
 
-
-static void
-tnc2_input(char *s)
-{
-	char pkt[1024], *payload;
-	struct sockaddr_ax25 saddr, daddr;
-	int dn;
-	size_t len;
-	if ((payload = tnc2_hdr_to_ax25(&saddr, &daddr, s)) == NULL)
+	if (payload == NULL) {
+		log_debug("dropping packet: contained no payload (no colon)");
 		return;
-	memcpy(pkt, &daddr.sax_addr, sizeof(struct ax25_addr));
-	memcpy(&pkt[7], &saddr.sax_addr, sizeof(struct ax25_addr));
-	for (dn = 0; dn < saddr.sax_pathlen; dn++)
-		memcpy(&pkt[14 + (7 * dn)], &saddr.sax_path[dn], sizeof(struct ax25_addr));
-	pkt[14 + (7 * dn)] = 0x03;
-	pkt[15 + (7 * dn)] = 0xf0;
-	len = 16 + (7 * dn) + strlcpy(&pkt[16 + (7 * dn)], payload, 1024 - 16);
-	ax25_output(pkt, len);
+	}
+
+	for (tp = 0; &pkt_tnc2[tp] < payload; tp++) {
+		if (pkt_tnc2[tp] == ',') {
+			memcpy(&pkt_ax25[17], pkt_tnc2, tp);
+			break;
+		}
+	}
+
+	if (&pkt_tnc2[tp] == payload) {
+		log_debug("dropping packet: never found a comma in the header");
+		return;
+	}
+
+	memcpy(&pkt_ax25[17 + tp], payload, tnc2_len - (payload - pkt_tnc2));
+
+	ax25_output(pkt_ax25, 15 + tp + (tnc2_len - (payload - pkt_tnc2)));
 }
 
 static void *
@@ -676,7 +499,7 @@ aprsis_local_shuffle(char *buf, char *ep, int pos)
 	log_debug("rcv: %s\n", buf);
 	if (ei > 10 && buf[0] != '#')
 		/* a reasonable minimum length and not in-band signalling */
-		tnc2_input(buf);
+		tnc2_input(buf, ei);
 	memmove(buf, &buf[ei], pos - ei);
 	pos -= ei;
 	return pos;
