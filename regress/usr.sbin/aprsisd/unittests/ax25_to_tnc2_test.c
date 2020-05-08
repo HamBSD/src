@@ -134,6 +134,35 @@ const unsigned char not_aprs_pid[] = {
 	0xff
 };
 
+const unsigned char no_information[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, (14 << 1) | AX25_LAST_MASK,	// From MM0ROR-14
+	0x03, 0xf0,								// APRS packet
+	0xff
+};
+
+const unsigned char third_party[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, (14 << 1) | AX25_LAST_MASK,	// From MM0ROR-14
+	0x03, 0xf0,								// APRS packet
+	'}', 'M', 'M', '0', 'Y', 'S', 'O', '>', 'A', 'P', 'R', 'S', ',',	// Third party data: MM0YSO>APRS,
+	'L', 'O', 'R', 'A', '*', ':', 'H', 'e', 'l', 'l', 'o',			// LORA*:Hello
+	0xff
+};
+
+const unsigned char third_party_tnc2[] = "MM0YSO>APRS,LORA*:Hello";
+
+const unsigned char comment_injection_attack[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, (14 << 1) | AX25_LAST_MASK,	// From MM0ROR-14
+	0x03, 0xf0,								// APRS packet
+	'>', 'P', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'a', 'd', 'i', 'o',	// Status: Packet radio
+	'\r', '#', 'f', 'i', 'l', 't', 'e', 'r', ' ', 'm', '/', '1',		// \r#filter m/1
+	0xff
+};
+
+const unsigned char comment_injection_attack_tnc2[] = "MM0ROR-14>APBSDI,qAO,MB7UAR-2:>Packet radio";
+
 void
 test_for_drop(const char *name, const unsigned char *pkt_ax25, const char* expected_log)
 {
@@ -149,7 +178,7 @@ test_for_drop(const char *name, const unsigned char *pkt_ax25, const char* expec
 	}
 	if (strcmp(log_message, expected_log) != 0) {
 		errx(1,
-		    "%s was dropped but for the wrong reason\nexpected:%s\ngot:%s",
+		    "%s was not converted as expected\nexpected:%s\ngot:%s",
 		    name, expected_log, log_message);
 	}
 }
@@ -166,7 +195,9 @@ test_convert(const char *name, const unsigned char *pkt_ax25, const char* expect
 		errx(1, "%s was unexpectedly dropped: %s", name, log_message);
 	if (strlen(expected) != len_tnc2 || memcmp(pkt_tnc2, expected, len_tnc2) != 0) {
 		pkt_tnc2[len_tnc2] = '\0';
-		errx(1, "%s not encoded as expected: %s", name, pkt_tnc2);
+		errx(1,
+		    "%s was dropped but for the wrong reason\nexpected:%s|\n     got:%s|",
+		    name, expected, pkt_tnc2);
 	}
 }
 
@@ -209,9 +240,11 @@ main(int argc, char **argv)
 	test_for_drop("BADPID", not_aprs_pid,
 	    "dropping packet: due to non-APRS control/PID");
 
-	/* TODO: Test that a packet with no information part is dropped */
+	/* Test that a packet with no information part is dropped */
+	test_for_drop("NOINFO", no_information, "dropped packet: zero length information part");
 
-	/* TODO: Test that a 3rd party header is stripped */
+	/* Test that a 3rd party header is stripped (doesn't include q construct yet, should break in future) */
+	test_convert("3RDPARTY", third_party, third_party_tnc2);
 
 	/* TODO: Test that a 3rd party header with TCPIP (or other forbidden value) in the path is dropped */
 
@@ -219,11 +252,14 @@ main(int argc, char **argv)
 
 	/* TODO: Test that an IGATE query generates a response */
 
-	/* TODO: Test a maximum length header is OK */
+	/* TODO: Test that a maximum length header is OK */
 
 	/* TODO: Test that a maxmimum length packet is OK */
 
 	/* TODO: Test that a too long packet is dropped */
+
+	/* Test that a status report containing a comment injection attack is truncated */
+	test_convert("INJECT", comment_injection_attack, comment_injection_attack_tnc2);
 
 	printf("OK\n");
 	return 0;

@@ -41,7 +41,10 @@ size_t
 ax25_to_tnc2(unsigned char *pkt_tnc2, const unsigned char *pkt_ax25, const size_t ax25_len) {
 	unsigned char *abuf;
 	const unsigned char *ibp, *iep;
-	int al, ai, empty_path = 0, pi, tp = 0;
+	int al, ai; /* length and index for address strings */
+	int pi; /* current address index in rf header, or byte index in 3rd-party header */
+	int empty_path = 0; /* there are no digipeaters in the rf header */
+	int tp = 0; /* current length of pkt_tnc2 */
 
 	bzero(pkt_tnc2, TNC2_MAXLINE);
 
@@ -157,30 +160,56 @@ ax25_to_tnc2(unsigned char *pkt_tnc2, const unsigned char *pkt_ax25, const size_
 	ibp = AX25_INFO_PTR(pkt_ax25, pi);
 	iep = pkt_ax25 + ax25_len;
 
+	/* We truncate packets at the first \r or \n to avoid injection
+	 * attacks.
+	 * http://lists.tapr.org/pipermail/aprssig_lists.tapr.org/2020-May/048517.html */
+	for (pi = 0; pi < (iep - ibp); pi++) {
+		if (ibp[pi] == '\r' || ibp[pi] == '\n') {
+			log_debug("truncating packet: contained either cr or lf");
+			iep = ibp + pi;
+		}
+	}
+
 	if (iep - ibp == 0) {
 		log_debug("dropped packet: zero length information part");
 		return 0;
 	}
 
 	if (*ibp == '?') {
-		/* This is a query */
-		if (iep - ibp >= 6 && memcmp(ibp, "?APRS?", 6) == 0) {
-			log_debug("dropped packet: generic query");
-			return 0;
-		} else if (iep - ibp >= 7 && memcmp(ibp, "?IGATE?", 7) == 0) {
-			log_debug("dropped packet: generic query, but we'll reply on the local interface");
+		/* This is a general query */
+		if (iep - ibp >= 7 && memcmp(ibp, "?IGATE?", 7) == 0) {
+			log_debug("dropped packet: general igate query, but we'll reply on the local interface");
 			return 1;
 		}
+		log_debug("dropped packet: general query");
+		return 0;
 	}
 
 	if (*ibp == '}') {
 		/* This packet has a 3rd-party header */
-		tp = 0;
 		ibp++;
+		/* Assuming that callsigns are at least 3 characters, the minimum length
+		 * for a header would be 8 bytes, add one byte to have some payload in it
+		 * and we'll say drop anything less than 9 bytes. This also covers the
+		 * search for TCPIP in the header so we don't need to check again before
+		 * that. */
+		if (iep - ibp < 9) {
+			log_debug("dropped packet: 3rd-party traffic too short");
+			return 0;
+		}
+		for (pi = 0; (pi < iep - ibp) && ibp[pi + 6] != ':'; pi++) {
+			if (memcmp(&ibp[pi + 5], ",TCPIP", 6) == 0) {
+				log_debug("dropped packet: 3rd-party header contained TCPIP");
+				return 0;
+			}
+		}
+		if (pi == iep - ibp) {
+			log_debug("dropped packet: 3rd-party traffic contained no colon");
+			return 0;
+		}
 		log_debug("third party header: stripping rf header");
-		/* TODO: could really do with some validation here because this basically skips everything */
-		/* TODO: let's just drop stuff for now, to ensure we don't make loops */
-		return 0;
+		tp = 0;
+		/* TODO: could really do with some more validation here */
 	}
 
 	if (tp + (iep - ibp) > TNC2_MAXLINE) {

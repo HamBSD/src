@@ -1,4 +1,4 @@
-.Dd April 15, 2020
+.Dd May 8, 2020
 .Dt APRSIS-FILTER 7
 .Os
 .Sh NAME
@@ -196,13 +196,11 @@ Passes all position reports and objects with a square area defined by the
 north-western-most corner
 .Pf ( Ar lat1
 and
-.Ar lon1
-.Ns )
+.Ar lon1 )
 and the south-eastern-most corner
 .Pf ( Ar lat2
 and
-.Ar lon2
-.Ns ) Ns .
+.Ar lon2 ) .
 Up to 9 area filters can be defined at the same time.
 .Ss Entry Station Filter
 .Cm filter Op Ar - Ns
@@ -307,11 +305,21 @@ These will be converted by the server software.
 In the second form of this filter,
 .Ar os/... ,
 this is a strict object filter where object names are always 9 characters and
-item names are 3 to 9 characters. There can only be one strict object filter and
-it must be specified at the end of the filter line.
+item names are 3 to 9 characters.
+There can only be one strict object filter and it must be specified at the
+end of the filter line.
 .Sh SEE ALSO
 .Xr aprsisd 8
+.Sh STANDARDS
+.Bl -bullet
+.It
+.Rs
+.%A Peter Loveall AE5PL
+.%T Server-side Filter Commands
+.%U http://www.aprs-is.net/javAPRSFilter.aspx
+.Re
+.El
 .Sh AUTHORS
 This manual page was written for the HamBSD project by
-.An Iain R. Learmonth Aq Mt irl@fsfe.org
+.An Iain R. Learmonth Aq Mt irl@hambsd.org
 for the public domain.

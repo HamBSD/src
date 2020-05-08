@@ -380,9 +380,6 @@ aprsis_remote_open(char *server, char *port, char *pass,
 		if (tls_config_set_key_file(tls_config, key_file) == -1)
 			fatalx("tls_config_set_key_file: %s", tls_config_error(tls_config));
 
-		/* the aprs2.net CA certificate is unknown */
-		tls_config_insecure_noverifycert(tls_config);
-
 		/* ssl.aprs2.net isn't in the names for the servers */
 		tls_config_insecure_noverifyname(tls_config);
 
