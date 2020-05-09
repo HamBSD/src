@@ -1,0 +1,83 @@
+.Dd October 11, 2019
+.Dt APRSD 8
+.Os
+.Sh NAME
+.Nm aprsd
+.Nd Automatic Packet Reporting System daemon
+.Sh SYNOPSIS
+.Nm
+.Op Fl Dvs
+.Op Fl f Ar configfile
+.Ar callsign Ns Op -ssid
+.Ar if0
+.Op Ar if1 Op Ar ...
+.Sh DESCRIPTION
+.Nm
+sends
+.Em APRS
+position reports using either GPS or user-supplied position information.
+.Pp
+.Nm
+is usually started at boot time, and can be enabled by
+setting the following in
+.Pa /etc/rc.conf.local :
+.Pp
+.Dl aprsd_flags=\&"\&"
+.Pp
+See
+.Xr rc 8
+and
+.Xr rc.conf 8
+for more information on the boot process
+and enabling daemons.
+.Pp
+.Nm
+is configured using the
+.Xr aprsd.conf 5
+configuration file.
+This defines the beacons to be sent periodically, and filter rules for
+digipeater functionality.
+.Pp
+APRS uses
+.Em AX.25
+as a link layer.
+If you specify an interface that is not an AX.25 interface then
+.Nm
+will refuse to start.
+At least one interface is required.
+.Pp
+The
+.Xr nmea 4
+driver can be used to provide a live GPS position.
+Other drivers that update the sensors framework may also work.
+.Pp
+If the sensor cannot be found, or the sensor does not have a valid latitude or
+longitude, but a fixed latitude and longitude were provided, then the fixed
+position will be used.
+If no fixed position was provided, beacons are disabled until the sensor
+provides a valid position again.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+.It Fl v
+Verbose output.
+.It Fl s
+Skip initial delay before sending beacons.
+.It Fl f Ar configfile
+Use an alternative configuration file (default: /etc/aprsd.conf).
+.El
+.Sh SEE ALSO
+.Xr nmea 4 ,
+.Xr aprsd.conf 5
+.Sh HISTORY
+.Nm
+first appeared in HamBSD XXX.
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@hambsd.org
+for the public domain.
+.Sh CAVEATS
+Beacons will be made on all interfaces.
