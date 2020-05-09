@@ -5,7 +5,7 @@
 
 CFLAGS+=-DRESOLVSORT
 
-SRCS+=	base64.c ethers.c freeaddrinfo.c \
+SRCS+=	ax25.c base64.c ethers.c freeaddrinfo.c \
 	gai_strerror.c getaddrinfo.c gethostnamadr.c \
 	getifaddrs.c getnameinfo.c getnetent.c \
 	getnetnamadr.c getpeereid.c getproto.c getprotoent.c getprotoname.c \
@@ -28,7 +28,7 @@ SRCS+=	ip6opt.c rthdr.c vars6.c
 
 .include "${LIBCSRCDIR}/arch/${MACHINE_CPU}/net/Makefile.inc"
 
-MAN+=	htobe64.3 ether_aton.3 gai_strerror.3 getaddrinfo.3 gethostbyname.3 \
+MAN+=	ax25_aton.3 htobe64.3 ether_aton.3 gai_strerror.3 getaddrinfo.3 gethostbyname.3 \
 	getifaddrs.3 getnameinfo.3 getnetent.3 getpeereid.3 getprotoent.3 \
 	getrrsetbyname.3 getservent.3 htonl.3 if_indextoname.3 \
 	inet_addr.3 inet_lnaof.3 inet_net_ntop.3 inet_ntop.3 \
