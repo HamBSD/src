@@ -182,6 +182,7 @@ bpf_movein(struct uio *uio, struct bpf_d *d, struct mbuf **mp,
 		hlen = 0;
 		break;
 
+	case DLT_AX25:
 	case DLT_RAW:
 	case DLT_NULL:
 		sockp->sa_family = AF_UNSPEC;
