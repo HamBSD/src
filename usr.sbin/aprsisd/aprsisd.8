@@ -1,0 +1,198 @@
+.Dd May 8, 2020
+.Dt APRSISD 8
+.Os
+.Sh NAME
+.Nm aprsisd
+.Nd APRS-IS daemon
+.Sh SYNOPSIS
+.Nm aprsisd
+.Op Fl Dvb
+.Op Fl i Ar axtapN
+.Op Fl t | Fl p Ar passcode
+.Op Fl f Ar filter
+.Ar callsign Ns Op Pf - Ar ssid
+.Op Ar server Op Ar port
+.Sh DESCRIPTION
+APRS-IS is an Internet-based network which inter-connects various APRS radio
+networks throughout the world (and space).
+The
+.Nm
+daemon works together with the kernel
+.Xr axtap 4
+driver to establish a connection to an APRS-IS server and present it as a
+virtual network interface.
+.Nm
+can also authenticate to the server and set an optional filter.
+.Pp
+.Nm
+itself is only concerned with performing IGate related functions and does not,
+for example, produce position beacons or implement messaging.
+A separate application must be used for those purposes but may use the created
+.Xr axtap 4
+interface to communicate with APRS-IS.
+.Pp
+Packets sent by applications on the
+.Xr axtap 4
+interface will be uploaded to APRS-IS unless any of the following exclusion
+criteria are met:
+.Bl -bullet
+.It
+The path contains TCPIP, TCPXX (packet has already been through APRS-IS)
+.It
+The path contains NOGATE or RFONLY (operator does not want to be gated)
+.It
+The path contains more than 8 digipeaters (violation of AX.25 spec)
+.It
+The frame is not a UI frame (not APRS)
+.It
+The layer 3 protocol is not 0xf0 for "no L3 protocol" (not APRS)
+.It
+The information field is empty
+.It
+The packet contains a generic station query (?APRS?)
+.It
+The packet contains an IGate query (?IGATE?)
+.It
+The packet contains third-party traffic and TCPIP is present in the third-party
+header
+.It
+The packet contains third-party traffic but there is less than 9 bytes in the
+information field, excluding the data type field
+.It
+The packet contains third-party traffic but the header does not contain a colon
+.El
+.Pp
+To avoid APRS-IS injection attacks, the information field is truncated at
+the first 0x0a "new line" or 0x0d "carriage return" which are both
+interpreted by server software as delimiters.
+This happens before any processing begins.
+.Pp
+While an IGate query will not be uploaded to APRS-IS, a station capabilities
+packet will be sent in reply via the
+.Xr axtap 4
+interface.
+.Pp
+The RF header and data type for third-party traffic will be stripped before
+upload to APRS-IS.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl D
+Do not daemonize.
+.It Fl v
+Verbose log output.
+.It Fl b
+This station will transmit from APRS-IS to RF.
+See
+.Sx BI-DIRECTIONAL IGATE .
+.It Fl i Ar axtapN
+Use a specific
+.Xr axtap 4
+interface.
+By default the first available interface will be used.
+This option is primarily useful when starting
+.Nm
+during
+.Xr netstart 8 .
+.It Fl t
+Use TLS with client authentication.
+This option cannot be used with passcode authentication.
+Using this option without specifying a server will change the default server to
+.Em ssl.aprs2.net .
+If no port is specified, the default port will be changed to 24580.
+The certificate and key to be used for authentication must be in PEM format and
+placed at
+.Pa /etc/ssl/CALL.crt
+and
+.Pa /etc/ssl/private/CALL.key
+respectively.
+See the
+.Sx USING ARRL LOTW CERTIFICATES
+section.
+.It Fl p Ar passcode
+Set the passcode to be used for login to the server.
+Contact the software author if you do not know your passcode.
+If no passcode is specified, and TLS is not used, the connection will be
+unverified that it will be read-only (upload to APRS-IS will be forbidden).
+.It Fl f Ar filter
+Set a filter to be used with the server.
+See
+.Xr aprsis-filter 7
+for more information.
+.It Ar callsign Ns Op Pf - Ar ssid
+Set the link-layer address for the interface to the specified callsign and
+SSID.
+This will also be used as the login for APRS-IS.
+It must be a valid AX.25 address.
+The default SSID, if not specified, is 0 (zero).
+.It Ar server Op Ar port
+Set the server to connect to, optionally specifying the TCP port.
+By default the round-robin DNS name
+.Em rotate.aprs2.net
+is used with port 14580.
+The server may be specified by either: a DNS name, a dotted-quad IPv4 address
+or a colon-seperated IPv6 address.
+.El
+.Sh BI-DIRECTIONAL IGATE
+When the
+.Fl b
+flag is specified, packets uploaded to APRS-IS that do have a FROMCALL
+matching the
+.Ar callsign Ns Op Pf - Ar ssid
+will have qAR appended to indicate that the packet was heard on RF and that
+messages can be sent via this station to reach the sending station.
+The default is to append qAO to indicate that while the packet was heard on RF,
+this station will not pass messages from the Internet to RF and so cannot be
+used to contact the sending station.
+.Pp
+When this flag is omitted, incoming packets from the Internet will be dropped.
+.Sh USING ARRL LOTW CERTIFICATES
+The APRS Tier 2 servers using SSL will automatically authenticate users when an ARRL
+LOTW certificate is presented.
+Certificates may be exported from TQSL in PKCS #12 format, but will need to be
+converted to PEM format for use with
+.Nm .
+The
+.Xr openssl 1
+command can be used to convert the formats:
+.Bd -literal
+$ openssl pkcs12 -in /path/to/CALL.p12 -out /etc/ssl/CALL.crt -nokeys
+$ openssl pkcs12 -in /path/to/CALL.p12 -out /etc/ssl/private/CALL.key -nocerts
+.Ed
+.Pp
+Replace
+.Ql CALL
+with your callsign.
+If you did not use a passphrase when exporting your certificate from TQSL, add
+.Ar -nodes
+to the above two commands.
+.Sh DIAGNOSTICS
+When running as a daemon,
+.Nm
+will send status information, warnings and errors to
+.Xr syslogd 8
+using facility daemon and levels err, warn, info and debug.
+When running in the foreground, messages will be printed to stdout.
+.Sh SEE ALSO
+.Xr axtap 4 ,
+.Xr aprsis-filter 7
+.Sh STANDARDS
+.Bl -bullet
+.It
+.Rs
+.%A Peter Loveall AE5PL
+.%T APRS-IS Specifications
+.%U http://www.aprs-is.net/Specification.aspx
+.Re
+.El
+.Sh HISTORY
+.Nm
+first appeared in HamBSD XXX.
+.Sh AUTHORS
+The
+.Nm
+daemon was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@hambsd.org
+for the public domain.
+.Sh CAVEATS
+Nested third-party traffic is not handled, only the RF header will be stripped
+and checks will be performed on the first third-party header only.
