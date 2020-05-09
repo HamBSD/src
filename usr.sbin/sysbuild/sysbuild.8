@@ -1,0 +1,64 @@
+.Dd $Mdocdate: January 7 2020 $
+.Dt SYSBUILD 8
+.Os
+.Sh NAME
+.Nm sysbuild
+.Nd build the HamBSD system
+.Sh SYNOPSIS
+.Nm
+.Op Fl 1 | 2
+.Sh DESCRIPTION
+.Nm
+is a utility to build HamBSD.
+.Bl -tag -width "-1"
+.It Fl 1
+Perform stage 1 of a HamBSD build.
+.It Fl 2
+Perform stage 2 of a HamBSD build.
+.El
+.Sh BUILD STAGES
+The build process is split into two stages, based on the steps documented in
+.Xr release 8 .
+This split allows for a reboot to occur, booting the new kernel before building
+the new base system.
+.Pp
+Stage 1 contains:
+.Bl -tag -compact
+.It 1. Update sources
+.It 2. Build and install a new kernel
+.El
+.Pp
+Stage 2 contains:
+.Bl -tag -compact
+.It 3. Build a new base system
+.It 4. Make and validate the base system release
+.It 5. Build and install Xenocara
+.It 6. Make and validate the Xenocara release
+.It 8. Create boot and installation disk images
+.El
+.Pp
+No third party packages are built as part of
+.Nm .
+.Sh FILES
+.Bl -tag -width "/home/release" -compact
+.It Pa /home/src.git
+Bare
+.Xr git-repository 5
+with HamBSD sources.
+.It Pa /usr/src
+.Xr got-worktree 5
+from the above git repository.
+.It Pa /home/release
+Destination for release files.
+.It Pa /noperm
+Temporary mount point used for build.
+.El
+.Sh SEE ALSO
+.Xr signify 1 ,
+.Xr release 8
+.Sh HISTORY
+.Nm
+first appeared in HamBSD x.x.
+.Sh BUGS
+No lockfiles are used to prevent concurrent running, or to prevent
+stage 2 cron job from running on reboot when it wasn't actually needed.
