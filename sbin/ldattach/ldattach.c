@@ -205,6 +205,8 @@ main(int argc, char *argv[])
 		ldisc = MSTSDISC;
 	} else if (!strcmp(disc, "endrun")) {
 		ldisc = ENDRUNDISC;
+	} else if (!strcmp(disc, "kiss")) {
+		ldisc = KISSDISC;
 	} else {
 		syslog(LOG_ERR, "unknown line discipline %s", disc);
 		goto bail_out;
