@@ -30,8 +30,9 @@
 .Dt TAP 4
 .Os
 .Sh NAME
+.Nm axtap ,
 .Nm tap
-.Nd Ethernet tunnel pseudo-device
+.Nd Link-layer tunnel pseudo-devices
 .Sh SYNOPSIS
 .Cd "pseudo-device tun"
 .Pp
@@ -39,30 +40,44 @@
 .In net/if_tun.h
 .Sh DESCRIPTION
 The
-.Nm
-driver provides an Ethernet interface pseudo-device.
+.Nm axtap
+and
+.Nm tap
+drivers provide an AX.25 and Ethernet interface pseudo-devices respectively.
 Packets sent to this interface can be read by a userland process
 and processed as desired.
 Packets written by the userland process are injected back into
 the kernel networking subsystem.
 .Pp
-A
-.Nm
+An
+.Nm axtap
+or
+.Nm tap
 interface can be created at runtime using the
-.Ic ifconfig tap Ns Ar N Ic create
+.Ic ifconfig
+.Op Pa ax Ns
+.Pa tap Ns
+.Ar N Ic create
 command or by opening the character special device
-.Pa /dev/tapN .
+.Pf /dev/ Ns
+.Op Pa ax Ns
+.Pa tap Ns
+.Ar N .
 .Pp
 Each device has an exclusive open property: it cannot be opened
 if it is already open and in use by another process.
 Each read returns at most one packet; if insufficient
 buffer space is provided, the packet is truncated.
 Each write supplies exactly one packet.
-Each packet read or written is an Ethernet packet.
-The Ethernet CRC at the end of the frame is not required.
+Each packet read or written is a link-layer frame.
+The Ethernet CRC at the end of the frame is not required, nor is the frame
+check sequence for AX.25 frames.
 On the last close of the device, all queued packets are discarded.
 If the device was created by opening
-.Pa /dev/tapN ,
+.Pa /dev/ Ns
+.Op Pa ax Ns
+.Pa tap Ns
+.Ar N ,
 it will be automatically destroyed.
 Devices created via
 .Xr ifconfig 8
@@ -115,7 +130,13 @@ and
 .\" should say what type affects...
 .Va type
 defaults to
-.Dv IFT_ETHER .
+.Dv IFT_AX25
+for
+.Nm axtap
+and
+.Dv IFT_ETHER
+for
+.Nm tap
 This sets the interface media address header type.
 .Pp
 .It Dv TUNSIFMODE Fa int *
@@ -132,9 +153,12 @@ The generic ioctls
 .Dv FIOSETOWN ,
 .Dv FIOGETOWN
 are supported by
-.Nm .
+.Nm axtap
+and
+.Nm tap .
 .Sh FILES
-.Bl -tag -width /dev/tap* -compact
+.Bl -tag -width /dev/axtap* -compact
+.It Pa /dev/axtap*
 .It Pa /dev/tap*
 .El
 .Sh ERRORS
@@ -211,7 +235,7 @@ interface address assigned to it, such as via
 .Xr netstart 8
 .Sh HISTORY
 The
-.Nm
+.Nm tap
 driver first appeared in
 .Ox 5.9 .
 .Sh AUTHORS
