@@ -129,6 +129,8 @@
 #include <net/pfvar.h>
 #endif
 
+#include <netax25/if_ax25.h>
+
 #include <sys/device.h>
 
 void	if_attachsetup(struct ifnet *);
@@ -1811,8 +1813,10 @@ if_setlladdr(struct ifnet *ifp, const uint8_t *lladdr)
 	if (ifp->if_sadl == NULL)
 		return (EINVAL);
 
-	memcpy(((struct arpcom *)ifp)->ac_enaddr, lladdr, ETHER_ADDR_LEN);
-	memcpy(LLADDR(ifp->if_sadl), lladdr, ETHER_ADDR_LEN);
+	if (ifp->if_sadl->sdl_alen == ETHER_ADDR_LEN)
+		memcpy(((struct arpcom *)ifp)->ac_enaddr, lladdr, ETHER_ADDR_LEN);
+
+	memcpy(LLADDR(ifp->if_sadl), lladdr, ifp->if_sadl->sdl_alen);
 
 	return (0);
 }
@@ -2176,9 +2180,7 @@ ifioctl(struct socket *so, u_long cmd, caddr_t data, struct proc *p)
 	case SIOCSIFLLADDR:
 		if ((error = suser(p)))
 			break;
-		if ((ifp->if_sadl == NULL) ||
-		    (ifr->ifr_addr.sa_len != ETHER_ADDR_LEN) ||
-		    (ETHER_IS_MULTICAST(ifr->ifr_addr.sa_data))) {
+		if (ifp->if_sadl == NULL) {
 			error = EINVAL;
 			break;
 		}
@@ -2188,6 +2190,25 @@ ifioctl(struct socket *so, u_long cmd, caddr_t data, struct proc *p)
 		case IFT_CARP:
 		case IFT_XETHER:
 		case IFT_ISO88025:
+			if ((ifr->ifr_addr.sa_len != ETHER_ADDR_LEN) ||
+			    (ETHER_IS_MULTICAST(ifr->ifr_addr.sa_data))) {
+				error = EINVAL;
+				break;
+			}
+			error = (*ifp->if_ioctl)(ifp, cmd, data);
+			if (error == ENOTTY)
+				error = 0;
+			if (error == 0)
+				error = if_setlladdr(ifp,
+				    ifr->ifr_addr.sa_data);
+			break;
+		case IFT_AX25:
+			if ((ifr->ifr_addr.sa_len != AX25_ADDR_LEN) ||
+			    ((ifr->ifr_addr.sa_data[6] & ~AX25_SSID_MASK) != 0)) {
+				error = EINVAL;
+				break;
+			}
+			/* TODO: check that the characters are all uppercase letters and digits */
 			error = (*ifp->if_ioctl)(ifp, cmd, data);
 			if (error == ENOTTY)
 				error = 0;

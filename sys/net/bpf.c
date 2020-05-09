@@ -65,6 +65,8 @@
 #include <net/bpf.h>
 #include <net/bpfdesc.h>
 
+#include <netax25/if_ax25.h>
+
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 
@@ -180,6 +182,11 @@ bpf_movein(struct uio *uio, struct bpf_d *d, struct mbuf **mp,
 	case DLT_IEEE802_11_RADIO:
 		sockp->sa_family = AF_UNSPEC;
 		hlen = 0;
+		break;
+
+	case DLT_AX25:
+		sockp->sa_family = AF_UNSPEC;
+		hlen = AX25_MIN_HDR_LEN;
 		break;
 
 	case DLT_RAW:

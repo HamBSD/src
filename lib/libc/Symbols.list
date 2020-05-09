@@ -1092,6 +1092,8 @@ _res
 _res_ext
 _res_opcodes
 _res_resultcodes
+ax25_aton
+ax25_ntoa
 dn_expand
 endhostent
 endnetent
