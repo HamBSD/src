@@ -475,6 +475,8 @@ distribution:
 	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \
 	   ${.CURDIR}/cert.pem ${DESTDIR}/etc/ssl/cert.pem && \
 	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \
+	   ${.CURDIR}/hamcert.pem ${DESTDIR}/etc/ssl/hamcert.pem && \
+	${INSTALL} ${INSTALL_COPY} -o ${BINOWN} -g ${BINGRP} -m 444 \
 	   ${.CURDIR}/x509v3.cnf ${DESTDIR}/etc/ssl/x509v3.cnf
 
 all: ${PC_FILES}
