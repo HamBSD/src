@@ -1,0 +1,325 @@
+.Dd May 8, 2020
+.Dt APRSIS-FILTER 7
+.Os
+.Sh NAME
+.Nm aprsis-filter
+.Nd APRS-IS Filter Commands
+.Sh SYNOPSIS
+.Cm filter Ar default
+.br
+.Cm filter
+.Oo
+.Op Ar - Ns
+.Ar r/lat/lon/dist
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar p/aa Ns Op Ar /bb Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar b/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar t/poimqstunw
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar t/poimqstuw/call/dist
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar s/pri Ns Op Ar /alt Ns Op Ar /over
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar d/digi1 Ns Op Ar /digi2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar a/lat1/lon1/lat2/lon2
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar e/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar g/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar u/unproto1 Ns Op Ar /unproto2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar q/con Ns Op Ar /I
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar m/dist
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar f/call/dist
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar o/obj1 Ns Op Ar /obj2 Ns Op Ar /..
+.Oc
+.Oo
+.Op Ar - Ns
+.Ar os/obj1 Ns Op Ar /obj2 Ns Op Ar /..
+.Oc
+.Sh DESCRIPTION
+APRS-IS servers typically allow for a client, like
+.Xr aprsisd 8 ,
+to specify filters that will restrict the set of packets passed to the client.
+.Pp
+When no filter is specified, a user-defined filter port will pass messages to
+the client and any gated station.
+Position reports for the sender of those messages will also be passed.
+Multiple filters may be specified and a packet will be passed if any filter
+matches, and no filter excludes it.
+Filters can exclude packets by prefixing a filter parameter with a hyphen.
+Exclusion does not affect the default passing of messaging packets or their
+associated position reports.
+.Pp
+For example, to get all stations within 200 km of my station, except stations
+with the prefix of MW:
+.D1 filter m/200 -p/MW
+.Pp
+The server-side filter uses decimal degrees for latitude and longitude (note that this
+is not degrees and decimal minutes).
+Use negative values for west and south, and positive values for north and east.
+The command "filter default" resets the filter to the predefined filter for that port.
+.Ss Range Filter
+.Cm filter Op Ar - Ns
+.Ar r/lat/lon/dist
+.Pp
+Passes position reports and objects within
+.Ar dist
+kilometers from the given
+.Ar lat
+and
+.Ar lon .
+Up to 9 range filters can be defined at the same time.
+Messages addressed to the stations in range are also passed.
+.Ss Prefix Filter
+.Cm filter Op Ar - Ns
+.Ar p/aa Ns Op Ar /bb Ns Op Ar /..
+.Pp
+Passes all packets where the AX.25 source address starts with
+.Ar aa ,
+.Ar bb ,
+etc.
+At least one prefix must be defined, and multiple can be defined by seperating each by
+a slash (/).
+.Ss Budlist Filter
+.Cm filter Op Ar - Ns
+.Ar b/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Pp
+Passes all packets where the AX.25 source address is exactly
+.Ar call1 ,
+.Ar call2 ,
+etc.
+Callsigns specified may contain an asterisk (*) as a wildcard.
+.Ss Type Filter
+.Cm filter Op Ar - Ns
+.Ar t/poimqstunw
+|
+.Op Ar - Ns
+.Ar t/poimqstuw/call/dist
+.Pp
+Passes all packets based of specified types.
+At least one type must be specified, and multiple types can be specified.
+The types are:
+.Bl -tag -width p
+.It p
+Position Reports
+.It o
+Object Reports
+.It i
+Item Reports
+.It m
+Messages
+.It q
+Queries
+.It s
+Status Reports
+.It t
+Telemetry
+.It u
+User-defined Types
+.It n
+NWS format messages and objects
+.It w
+Weather Reports
+.El
+.Pp
+The second form of this filter allows for the filter to be limited to only
+passing those packets that match one of the selected types, and are within
+.Ar dist
+kilometers of
+.Ar call .
+Note that the weather report filter will also pass position reports for stations
+sending positionless weather reports, and that it is not possible to specify NWS
+format messages and objects when restricting by location.
+.Ss Symbol Filter
+.Cm filter Op Ar - Ns
+.Ar s/pri Ns Op Ar /alt Ns Op Ar /over
+.Pp
+Passes all position packets matching either
+.Ar pri
+from the primary symbol table,
+.Ar alt
+from the alternate symbol table, and optionally with
+.Ar over
+overlay.
+To specify a slash (/) character for any option of this filter, use a verical bar
+(|) instead and this will be translated by the server software.
+.Ss Digipeater Filter
+.Cm filter Op Ar - Ns
+.Ar d/digi1 Ns Op Ar /digi2 Ns Op Ar /..
+.Pp
+Passes all packets that have been digipeated by
+.Ar digi1 ,
+.Ar digi2 ,
+etc.
+Callsigns specified may contain an asterisk (*) as a wildcard.
+.Ss Area Filter
+.Cm filter Op Ar - Ns
+.Ar a/lat1/lon1/lat2/lon2
+.Pp
+Passes all position reports and objects with a square area defined by the
+north-western-most corner
+.Pf ( Ar lat1
+and
+.Ar lon1 )
+and the south-eastern-most corner
+.Pf ( Ar lat2
+and
+.Ar lon2 ) .
+Up to 9 area filters can be defined at the same time.
+.Ss Entry Station Filter
+.Cm filter Op Ar - Ns
+.Ar e/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Pp
+Passes all packets with the specified callsigns immediately following the q construct.
+Callsigns specified may contain an asterisk (*) as a wildcard.
+.Ss Group Message Filter
+.Cm filter Op Ar - Ns
+.Ar g/call1 Ns Op Ar /call2 Ns Op Ar /..
+.Pp
+Passes all message packets with the specified callsigns (optionally with an SSID)
+as the addressee of the message.
+Callsigns specified may contain an asterisk (*) as a wildcard.
+.Ss Unproto Filter
+.Cm filter Op Ar - Ns
+.Ar u/unproto1 Ns Op Ar /unproto2 Ns Op Ar /..
+.Pp
+Passes all packets with the specified callsigns (optionally with an SSID) in the
+AX.25 destination address field of the packet (also known as the to call or the
+unproto call).
+.Ss q Construct Filter
+.Cm filter Op Ar - Ns
+.Ar q/con Ns Op Ar /I
+.Pp
+Passes all packets with specified q constructs in the path.
+Only the last character of the construct should be specified.
+Multiple constructs may be specified.
+.Bl -tag -width qAR
+.It Pf qA Sy C
+Packet was received from the client directly via a verified connection.
+The callsign following this construct is the server's callsign.
+.It Pf qA Sy X
+Packet was received from the client directly via an unverified connection.
+The callsign following this construct is the server's callsign.
+.It Pf qA Sy U
+Packet was received from the client directly via a UDP connection.
+The callsign following this construct is the server's callsign.
+.It Pf qA Sy o
+Packet was received on a client-only port, the AX.25 source address does
+not match the login, and the packet contains either a ,I or qAR construct
+where the indicated IGate matches the login.
+The callsign following this construct is the callsign of the IGate.
+.It Pf qA Sy O
+Packet was received directly from a receive-only IGate from RF.
+The callsign following this construct is the callsign of the IGate.
+.It Pf qA Sy S
+Packet was generated by a server.
+The callsign following this construct is the login or IP address of the
+first identifiable server.
+.It Pf qA Sy r
+Packet was received indirectly from an IGate using the ,I construct.
+The callsign following this construct is the callsign of the IGate.
+.It Pf qA Sy R
+Packet was received directly via a verified connection by from an IGate from RF.
+The callsign following this construct is the callsign of the IGate.
+.It Pf qA Sy Z
+Packet was generated by the client/server and should not be propagated.
+The callsign following this construct is the callsign of the generating client/server.
+.It Pf qA Sy I
+Packet should be traced.
+Each server adds its identification to the path.
+The callsign following this construct is the callsign of the originating station.
+.El
+.Pp
+.Ar con
+may be left empty, and instead specifying an additional
+.Ar /I
+will pass all position packets from IGates identified in other packets by qAr or qAR.
+.Ss My Range Filter
+.Cm filter Op Ar - Ns
+.Ar m/dist
+.Pp
+Passes position reports and objects within
+.Ar dist
+kilometers of the last reported position of the logged in client.
+Messages addressed to the stations in range are also passed.
+.Ss Friend Range Filter
+.Cm filter Op Ar - Ns
+.Ar f/call/dist
+.Pp
+Passes position reports and objects within
+.Ar dist
+kilometers of the last reported position of
+.Ar call .
+Messages addressed to the stations in range are also passed.
+.Ss Object Filter
+.Cm filter Op Ar - Ns
+.Ar o/obj1 Ns Op Ar /obj2 Ns Op Ar /..
+|
+.Ar os/obj1 Ns Op Ar /obj2 Ns Op Ar /..
+.Pp
+Passes objects with the exact name of
+.Ar obj1 ,
+.Ar obj2 ,
+etc.
+Names specified may contain an asterisk (*) as a wildcard.
+To specify an asterisk, instead use tilde (~).
+To specify a slash (/), instead use vertical bar (|).
+These will be converted by the server software.
+.Pp
+In the second form of this filter,
+.Ar os/... ,
+this is a strict object filter where object names are always 9 characters and
+item names are 3 to 9 characters.
+There can only be one strict object filter and it must be specified at the
+end of the filter line.
+.Sh SEE ALSO
+.Xr aprsisd 8
+.Sh STANDARDS
+.Bl -bullet
+.It
+.Rs
+.%A Peter Loveall AE5PL
+.%T Server-side Filter Commands
+.%U http://www.aprs-is.net/javAPRSFilter.aspx
+.Re
+.El
+.Sh AUTHORS
+This manual page was written for the HamBSD project by
+.An Iain R. Learmonth Aq Mt irl@hambsd.org
+for the public domain.
