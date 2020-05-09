@@ -795,6 +795,15 @@ init_linktype(type)
 		off_nl = 12;
 		return;
 
+	case DLT_AX25:
+		/* 
+		 * The header is variable length, but we only consider the
+		 * first two addresses in our driver.
+		 */
+		off_linktype = -1;
+		off_nl = 14;
+		return;
+
 	case DLT_USBPCAP:
 		/* FALLTHROUGH */
 	case DLT_RAW:
