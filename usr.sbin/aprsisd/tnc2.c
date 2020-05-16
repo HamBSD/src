@@ -1,5 +1,6 @@
 
 #include <assert.h>
+#include <ctype.h>
 #include <string.h>
 
 #include <sys/types.h>
@@ -37,6 +38,22 @@ forbidden_gate_path_address(const unsigned char *pa)
 	return 0;
 }
 
+static int
+ax25_validate(const struct ax25_addr *a)
+{
+	int c, i;
+	for (i = 0; i < 6; i++)
+		/* portability note: on OpenBSD isupper and isdigit
+		 * always use the C locale, so this will only match
+		 * ascii A-Z and 0-9 but other platforms may use
+		 * locales matching more characters. */
+		if (!isupper(a->ax25_addr_octet[i] >> 1) &&
+		    !isdigit(a->ax25_addr_octet[i] >> 1) &&
+		    (a->ax25_addr_octet[i] >> 1) != ' ')
+			return 0;
+	return 1;
+}
+
 size_t
 ax25_to_tnc2(unsigned char *pkt_tnc2, const unsigned char *pkt_ax25, const size_t ax25_len) {
 	unsigned char *abuf;
@@ -50,6 +67,10 @@ ax25_to_tnc2(unsigned char *pkt_tnc2, const unsigned char *pkt_ax25, const size_
 
 	log_debug("ax25_input: %zu bytes", ax25_len);
 
+	if (!ax25_validate(AX25_ADDR_PTR(pkt_ax25, 1))) {
+		log_debug("dropping packet: invalid ax.25 address");
+		return 0;
+	}
 	abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, 1));
 	al = strnlen(abuf, 10);
 	if (tp + al + 3 > TNC2_MAXLINE) { /* 3: used hop, path sep, null terminator */
@@ -84,6 +105,10 @@ ax25_to_tnc2(unsigned char *pkt_tnc2, const unsigned char *pkt_ax25, const size_
 				log_debug("dropping packet: a packet was dropped with forbidden entry in path");
 				return 0;
 			}
+		}
+		if (!ax25_validate(AX25_ADDR_PTR(pkt_ax25, pi))) {
+			log_debug("dropping packet: invalid ax.25 address");
+			return 0;
 		}
 		abuf = ax25_ntoa(AX25_ADDR_PTR(pkt_ax25, pi));
 		al = strnlen(abuf, 10);

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <vis.h>
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
@@ -37,6 +38,14 @@
  * http://www.aprs-is.net/Connecting.aspx
  */
 
+struct heard_entry {
+	struct ax25_addr addr;
+	struct timespec lastheard;
+	LIST_ENTRY(heard_entry) entries;
+};
+LIST_HEAD(heard_list, heard_entry) heard;
+
+struct timespec		 tcp_lastinput; /* last time data was received on tcp connection */
 int			 tap; /* file descriptor for tap device */
 int			 tcp; /* file descriptor for tcp connection */
 int			 usetls; /* command line flag -t */
@@ -51,7 +60,6 @@ static void	 daemonize(void);
 static char	*call_strip_ssid(void);
 static void	 send_station_capabilities(void);
 static char	*aprsis_pass(void);
-static int	 forbidden_gate_path_address(const unsigned char *);
 static int	 ax25_input(const unsigned char *, const size_t);
 static int	 tnc2_output(const unsigned char *, const size_t);
 static void	 ax25_output(const unsigned char *, const size_t);
@@ -64,6 +72,19 @@ static void	 aprsis_local_open(char *);
 static int	 aprsis_local_shuffle(char *, char *, int);
 static void	 aprsis_loop(void);
 int		 main(int, char **);
+
+int
+ax25_cmp(const struct ax25_addr *a1, const struct ax25_addr *a2)
+{
+	int i;
+	for (i = 0; i < 6; i++)
+		if (a1->ax25_addr_octet[i] != a2->ax25_addr_octet[i])
+			return 1;
+	if ((a1->ax25_addr_octet[i] & AX25_SSID_MASK) !=
+	    (a2->ax25_addr_octet[i] & AX25_SSID_MASK))
+		return 2;
+	return 0;
+}
 
 static __dead void
 usage(void)
@@ -78,6 +99,9 @@ usage(void)
 static void
 signal_handler(int sig)
 {
+	int hcnt;
+	struct heard_entry *hep;
+
 	switch (sig) {
 	case SIGHUP:
 		log_info("caught hangup signal");
@@ -151,36 +175,36 @@ aprsis_pass()
 	return pass;
 }
 
-static const unsigned char ax25_nogate[] = { 'N' << 1, 'O' << 1, 'G' << 1, 'A' << 1, 'T' << 1, 'E' << 1 };
-static const unsigned char ax25_rfonly[] = { 'R' << 1, 'F' << 1, 'O' << 1, 'N' << 1, 'L' << 1, 'Y' << 1 };
-static const unsigned char ax25_tcpip[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'I' << 1, 'P' << 1, ' ' << 1 };
-static const unsigned char ax25_tcpxx[]  = { 'T' << 1, 'C' << 1, 'P' << 1, 'X' << 1, 'X' << 1, ' ' << 1 };
-static const unsigned char *aprsis_forbidden_gate_addresses[] = {
-    ax25_nogate,
-    ax25_rfonly,
-    ax25_tcpip,
-    ax25_tcpxx,
-    NULL
-};
-
-static int
-forbidden_gate_path_address(const unsigned char *pa)
+static void
+ax25_heard(const struct ax25_addr *a)
 {
-	int i;
-	for (i = 0 ;; i++) {
-		if (aprsis_forbidden_gate_addresses[i] == NULL)
+	struct heard_entry *hp;
+
+	LIST_FOREACH(hp, &heard, entries) {
+		if (ax25_cmp(&hp->addr, a) == 0)
 			break;
-		if (memcmp(pa, aprsis_forbidden_gate_addresses[i], 6) == 0)
-			return 1;
 	}
-	/* TODO: q constructs? */
-	return 0;
+
+	if (hp == NULL) {
+		hp = malloc(sizeof(struct heard_entry));
+		memcpy(&hp->addr, a, AX25_ADDR_LEN);
+		LIST_INSERT_HEAD(&heard, hp, entries);
+	}
+
+	clock_gettime(CLOCK_MONOTONIC, &hp->lastheard);
 }
 
 static int
-ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25) {
+ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25)
+{
 	unsigned char pkt_tnc2[TNC2_MAXLINE];
 	size_t tnc2_len;
+
+	if (len_ax25 < 14)
+		/* TODO: should I log here? does ax25_to_tnc2 do this check? */
+		return 0;
+
+	ax25_heard(AX25_ADDR_PTR(pkt_ax25, 1));
 
 	tnc2_len = ax25_to_tnc2(pkt_tnc2, pkt_ax25, len_ax25);
 
@@ -209,14 +233,24 @@ ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25) {
 }
 
 static int
-tnc2_output(const unsigned char *s, const size_t len)
+tnc2_output(const unsigned char *pkt_tnc2, const size_t len)
 {
-	log_debug("snd: %s", s); /* TODO: strvis */
-	aprsis_remote_write(s, len);
+	char dbg_tnc2[(TNC2_MAXLINE * 4) + 1];
+	int i;
+
+	/* defence in depth, this should have been cleared by ax25_to_tnc2 */
+	assert(pkt_tnc2[0] != '#');
+	for (i = 1; i < len; i++)
+		assert(pkt_tnc2[i] != '\r' && pkt_tnc2[i] != '\n');
+
+	/* packets may contain \0 and other non-printables */
+	strvisx(dbg_tnc2, pkt_tnc2, len, VIS_WHITE);
+	log_debug("snd: %s", dbg_tnc2);
+
+	aprsis_remote_write(pkt_tnc2, len);
 	aprsis_remote_write("\r\n", 2);
 	return len + 2;
 }
-
 
 static void
 ax25_output(const unsigned char *pkt, const size_t len)
@@ -290,7 +324,7 @@ aprsis_login_str(char *login, char *pass, char *filter)
 		strlcat(login, " filter ", TNC2_MAXLINE);
 		strlcat(login, filter, TNC2_MAXLINE);
 	}
-	strlcat(login, "\n", TNC2_MAXLINE);
+	strlcat(login, "\r\n", TNC2_MAXLINE);
 }
 
 /*
@@ -396,6 +430,8 @@ aprsis_remote_open(char *server, char *port, char *pass,
 	}
 
 	for (p = servinfo; p != NULL; p = p->ai_next) {
+		inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), as, sizeof(as));
+		log_info("connecting to %s", as);
 		if ((tcp = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
 			log_warn("socket");
 			continue;
@@ -405,28 +441,28 @@ aprsis_remote_open(char *server, char *port, char *pass,
 			log_warn("connect");
 			continue;
 		}
+		nodelay = 1;
+		setsockopt(tcp, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+		if (usetls) {
+			if (tls_connect_socket(tls_ctx, tcp, server) == -1) {
+				log_warnx("tls_connect_socket: %s", tls_error(tls_ctx));
+				continue;
+			}
+			if (tls_handshake(tls_ctx) == -1) {
+				log_warnx("tls_handshake: %s", tls_error(tls_ctx));
+				continue;
+			}
+			log_debug("established tls session");
+		}
 		break;
 	}
 
 	if (p == NULL)
-		fatal("connect");
-
-	nodelay = 1;
-	setsockopt(tcp, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
-
-	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), as, sizeof(as));
+		fatalx("no servers available for %s", server);
 
 	freeaddrinfo(servinfo);
 
 	log_debug("opened connection to %s", as);
-
-	if (usetls) {
-		if (tls_connect_socket(tls_ctx, tcp, server) == -1)
-			fatalx("tls_connect_socket: %s", tls_error(tls_ctx));
-		if (tls_handshake(tls_ctx) == -1)
-			fatalx("tls_handshake: %s", tls_error(tls_ctx));
-		log_debug("established tls session");
-	}
 
 	/* undocumented feature, please ignore */
 	if (strcmp(pass, "please") == 0)
@@ -505,47 +541,89 @@ aprsis_local_shuffle(char *buf, char *ep, int pos)
 static void
 aprsis_loop(void)
 {
-	struct kevent chlist[2];
-	struct kevent evlist[2];
-	int evi, kq, nr, nev, r_pos;
+	struct kevent chlist[4];
+	struct kevent evlist[4];
+	struct timespec now;
+	int evi, hcnt, nr, nev, r_pos;
+	static int kq = -1;
 	char r_buf[TNC2_MAXLINE], *r_ep;
 	unsigned char l_buf[1500];
+	struct heard_entry *hep, *hetmp;
 
 	r_pos = 0;
 	bzero(r_buf, TNC2_MAXLINE);
 	bzero(l_buf, 1500);
 
-	if ((kq = kqueue()) == -1)
-		fatal("kqueue");
+	if (kq == -1)
+		if ((kq = kqueue()) == -1)
+			fatal("kqueue");
 
+	/* This one will always be new */
 	EV_SET(&chlist[0], tcp, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
+
+	/* These three might exist, but no harm in updating them */
 	EV_SET(&chlist[1], tap, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
+	EV_SET(&chlist[2], 1, EVFILT_TIMER, EV_ADD | EV_ENABLE, 0, 1000, 0);
+	EV_SET(&chlist[3], SIGINFO, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, 0);
+
+	/* Initialise timeout */
+	clock_gettime(CLOCK_MONOTONIC, &tcp_lastinput);
 
 	log_debug("starting loop");
 
-	while ((nev = kevent(kq, chlist, 2, evlist, 2, NULL)) > 0) {
+	while ((nev = kevent(kq, chlist, 4, evlist, 4, NULL)) > 0) {
 		for (evi = 0; evi < nev; evi++) {
-			if (evlist[evi].ident == tap) {
-				log_debug("got a tap event");
-				if ((nr = read(tap, l_buf, 1500)) == -1 || nr == 0)
-					fatal("read tap");
-				if (ax25_input(l_buf, nr) == -1)
-					/* error occured writing to APRS-IS; let's reconnect */
-					return;
-			} else if (evlist[evi].ident == tcp) {
-				log_debug("got a tcp event");
-				if (usetls) {
-					if (((nr = tls_read(tls_ctx, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1)) {
-						log_warnx("tls_read: %s", tls_error(tls_ctx));
-						return;
-					}
-				} else {
-					if (((nr = read(tcp, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || nr == 0)
-						return;
+			switch (evlist[evi].filter) {
+			case EVFILT_SIGNAL:
+				hcnt = 0;
+				LIST_FOREACH(hep, &heard, entries) {
+					hcnt++;
 				}
-				r_pos += nr;
-				if ((r_ep = strchr(r_buf, '\n')) != NULL)
-					r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
+				log_info("IGATE LOC_CNT=%d", hcnt);
+				break;
+			case EVFILT_TIMER:
+				log_debug("loop: timer event");
+				clock_gettime(CLOCK_MONOTONIC, &now);
+				if (now.tv_sec - tcp_lastinput.tv_sec > 45) {
+					log_debug("%lld seconds since last input",
+					    now.tv_sec - tcp_lastinput.tv_sec);
+					return;
+				}
+				LIST_FOREACH_SAFE(hep, &heard, entries, hetmp) {
+					if (now.tv_sec - hep->lastheard.tv_sec > 30) {
+						log_debug("heard entry %s expiring after %lld seconds",
+						    ax25_ntoa(&hep->addr),
+						    now.tv_sec - hep->lastheard.tv_sec);
+						LIST_REMOVE(hep, entries);
+						free(hep);
+					}
+				}
+				break;
+			case EVFILT_READ:
+				if (evlist[evi].ident == tap) {
+					log_debug("loop: tap event");
+					if ((nr = read(tap, l_buf, 1500)) == -1 || nr == 0)
+						fatal("read tap");
+					if (ax25_input(l_buf, nr) == -1)
+						/* error occured writing to APRS-IS; let's reconnect */
+						return;
+				} else if (evlist[evi].ident == tcp) {
+					log_debug("loop: tcp event");
+					clock_gettime(CLOCK_MONOTONIC, &tcp_lastinput);
+					if (usetls) {
+						if (((nr = tls_read(tls_ctx, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1)) {
+							log_warnx("tls_read: %s", tls_error(tls_ctx));
+							return;
+						}
+					} else {
+						if (((nr = read(tcp, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || nr == 0)
+							return;
+					}
+					r_pos += nr;
+					if ((r_ep = strchr(r_buf, '\n')) != NULL)
+						r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
+				}
+				break;
 			}
 		}
 	}
@@ -567,7 +645,6 @@ main(int argc, char **argv)
 	port = "14580"; /* APRS-IS server port */
 	usetls = 0;
 	bidir = 0;
-
 
 	while ((ch = getopt(argc, argv, "Dvtbi:p:f:")) != -1) {
 		switch (ch) {
@@ -621,6 +698,8 @@ main(int argc, char **argv)
 	if (!debug)
 		daemonize();
 
+	LIST_INIT(&heard);
+
 	/* the path for the tap device is unknown until we open it */
 	aprsis_local_open(interface);
 	if (tap == -1)
@@ -644,11 +723,19 @@ main(int argc, char **argv)
 	}
 
 	for (;;) {
-		while (aprsis_remote_open(server, port, pass, filter) == -1) {
+		if (aprsis_remote_open(server, port, pass, filter) == -1) {
 			log_warnx("connection failed, reconnecting in 30 seconds...");
 			sleep(30);
+			continue;
 		}
 		aprsis_loop();
+		if (usetls) {
+			if (tls_close(tls_ctx) == -1)
+				log_warnx("tls_write: %s", tls_error(tls_ctx));
+			tls_free(tls_ctx);
+		}
+		close(tcp);
 		log_warnx("disconnected from server, reconnecting in 30 seconds...");
+		sleep(30);
 	}
 }

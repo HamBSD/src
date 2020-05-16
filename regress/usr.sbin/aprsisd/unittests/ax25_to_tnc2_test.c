@@ -30,7 +30,7 @@
 #include "tnc2.h"
 
 int bidir;
-char *call = "MB7UAR-2";
+char *call = "MB7UAR-12";
 
 char *log_message;
 
@@ -49,8 +49,8 @@ const unsigned char good[] = {
 	'>', 'P', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'a', 'd', 'i', 'o',	// Status: Packet radio
 	0xff
 };
-const unsigned char good_tnc2_rxonly[] = "MM0ROR-14>APBSDI,MB7VX*,WIDE1-1,qAO,MB7UAR-2:>Packet radio";
-const unsigned char good_tnc2_bidir[] =  "MM0ROR-14>APBSDI,MB7VX*,WIDE1-1,qAR,MB7UAR-2:>Packet radio";
+const unsigned char good_tnc2_rxonly[] = "MM0ROR-14>APBSDI,MB7VX*,WIDE1-1,qAO,MB7UAR-12:>Packet radio";
+const unsigned char good_tnc2_bidir[] =  "MM0ROR-14>APBSDI,MB7VX*,WIDE1-1,qAR,MB7UAR-12:>Packet radio";
 
 const unsigned char nogate_1_used_in_path[] = {
 	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
@@ -88,7 +88,7 @@ const unsigned char max_digis[] = {
 	0xff
 };
 
-const unsigned char max_digis_tnc2[] = "MM0ROR-14>APBSDI,WIDE1-1,WIDE2-1,WIDE3-1,WIDE4-1,WIDE5-1,WIDE6-1,WIDE7-1,WIDE8-1,qAO,MB7UAR-2:>Packet radio";
+const unsigned char max_digis_tnc2[] = "MM0ROR-14>APBSDI,WIDE1-1,WIDE2-1,WIDE3-1,WIDE4-1,WIDE5-1,WIDE6-1,WIDE7-1,WIDE8-1,qAO,MB7UAR-12:>Packet radio";
 
 const unsigned char too_many_digis[] = {
 	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
@@ -152,6 +152,103 @@ const unsigned char third_party[] = {
 
 const unsigned char third_party_tnc2[] = "MM0YSO>APRS,LORA*:Hello";
 
+const unsigned char max_long_header[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 14 << 1,	// To APBSDI-14
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, 14 << 1 | AX25_CR_MASK,	// From MM0ROR-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '1' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE10-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '2' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE20-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '3' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE30-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '4' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE40-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '5' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE50-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '6' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE60-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '7' << 1, '0' << 1, 14 << 1 | AX25_CR_MASK,	// Via WIDE70-14
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '8' << 1, '0' << 1, (14 << 1) | AX25_CR_MASK | AX25_LAST_MASK,	// Via WIDE80-14 (last)
+	0x03, 0xf0,								// APRS packet
+	'>', 'P', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'a', 'd', 'i', 'o',	// Status: Packet radio
+	0xff
+};
+const unsigned char max_long_header_tnc2[] =
+    "MM0ROR-14>APBSDI-14,WIDE10-14*,WIDE20-14*,WIDE30-14*,WIDE40-14*,WIDE50-14*,WIDE60-14*,WIDE70-14*,WIDE80-14*,qAO,MB7UAR-12:>Packet radio";
+
+const unsigned char max_long_packet[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,		// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, AX25_CR_MASK | AX25_LAST_MASK, // From MM0ROR (last)
+	0x03, 0xf0,								// APRS packet
+	'>', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 16
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 32
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 48
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 64
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 80
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 96
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 112
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 128
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 144
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 160
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 176
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 192
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 208
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 224
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 240
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 256
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 272
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 288
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 304
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 320
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 336
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 352
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 368
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 384
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 400
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 416
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 432
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 448
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 464
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 480
+	'0', '1',  									// 482
+	0xff
+};
+const unsigned char max_long_packet_tnc2[] =
+    "MM0ROR>APBSDI,qAO,MB7UAR-12:>123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01";
+
+const unsigned char too_long_packet[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,		// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, AX25_CR_MASK | AX25_LAST_MASK, // From MM0ROR (last)
+	0x03, 0xf0,								// APRS packet
+	'>', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 16
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 32
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 48
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 64
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 80
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 96
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 112
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 128
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 144
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 160
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 176
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 192
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 208
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 224
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 240
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 256
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 272
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 288
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 304
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 320
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 336
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 352
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 368
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 384
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 400
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 416
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 432
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 448
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 464
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',	// 480
+	'0', '1', '2', '3',								// 484
+	0xff
+};
+
+
 const unsigned char comment_injection_attack[] = {
 	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
 	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, (14 << 1) | AX25_LAST_MASK,	// From MM0ROR-14
@@ -160,8 +257,27 @@ const unsigned char comment_injection_attack[] = {
 	'\r', '#', 'f', 'i', 'l', 't', 'e', 'r', ' ', 'm', '/', '1',		// \r#filter m/1
 	0xff
 };
+const unsigned char comment_injection_attack_tnc2[] = "MM0ROR-14>APBSDI,qAO,MB7UAR-12:>Packet radio";
 
-const unsigned char comment_injection_attack_tnc2[] = "MM0ROR-14>APBSDI,qAO,MB7UAR-2:>Packet radio";
+const unsigned char bad_source[] = {
+	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
+	'm' << 1, 'm' << 1, '0' << 1, 'r' << 1, 'o' << 1, 'r' << 1, 14 << 1,	// From MM0ROR-14
+	'M' << 1, 'B' << 1, '7' << 1, 'V' << 1, 'X' << 1, ' ' << 1, AX25_CR_MASK,	// Via MB7VX (used)
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '1' << 1, ' ' << 1, (1 << 1) | AX25_LAST_MASK,	// Via WIDE1-1 (last)
+	0x03, 0xf0,								// APRS packet
+	'>', 'P', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'a', 'd', 'i', 'o',	// Status: Packet radio
+	0xff
+};
+
+const unsigned char bad_dest[] = {
+	'#' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'I' << 1, 0x00,	// To APBSDI
+	'M' << 1, 'M' << 1, '0' << 1, 'R' << 1, 'O' << 1, 'R' << 1, 14 << 1,	// From MM0ROR-14
+	'M' << 1, 'B' << 1, '7' << 1, 'V' << 1, 'X' << 1, ' ' << 1, AX25_CR_MASK,	// Via MB7VX (used)
+	'W' << 1, 'I' << 1, 'D' << 1, 'E' << 1, '1' << 1, ' ' << 1, (1 << 1) | AX25_LAST_MASK,	// Via WIDE1-1 (last)
+	0x03, 0xf0,								// APRS packet
+	'>', 'P', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'a', 'd', 'i', 'o',	// Status: Packet radio
+	0xff
+};
 
 void
 test_for_drop(const char *name, const unsigned char *pkt_ax25, const char* expected_log)
@@ -178,7 +294,7 @@ test_for_drop(const char *name, const unsigned char *pkt_ax25, const char* expec
 	}
 	if (strcmp(log_message, expected_log) != 0) {
 		errx(1,
-		    "%s was not converted as expected\nexpected:%s\ngot:%s",
+		    "%s was not dropped as expected\nexpected:%s\ngot:%s",
 		    name, expected_log, log_message);
 	}
 }
@@ -196,7 +312,7 @@ test_convert(const char *name, const unsigned char *pkt_ax25, const char* expect
 	if (strlen(expected) != len_tnc2 || memcmp(pkt_tnc2, expected, len_tnc2) != 0) {
 		pkt_tnc2[len_tnc2] = '\0';
 		errx(1,
-		    "%s was dropped but for the wrong reason\nexpected:%s|\n     got:%s|",
+		    "%s was not converted as expected\nexpected:%s|\n     got:%s|",
 		    name, expected, pkt_tnc2);
 	}
 }
@@ -252,14 +368,23 @@ main(int argc, char **argv)
 
 	/* TODO: Test that an IGATE query generates a response */
 
-	/* TODO: Test that a maximum length header is OK */
+	/* Test that a maximum length header is OK */
+	test_convert("MAXLHDR", max_long_header, max_long_header_tnc2);
 
-	/* TODO: Test that a maxmimum length packet is OK */
+	/* Test that a maxmimum length packet is OK */
+	test_convert("MAXLONG", max_long_packet, max_long_packet_tnc2);
 
-	/* TODO: Test that a too long packet is dropped */
+	/* Test that a too long packet is dropped */
+	test_for_drop("TOOLONG", too_long_packet, "dropping packet: information part too long");
 
 	/* Test that a status report containing a comment injection attack is truncated */
 	test_convert("INJECT", comment_injection_attack, comment_injection_attack_tnc2);
+
+	/* Test that a bad source address causes a drop */
+	test_for_drop("BADSRC", bad_source, "dropping packet: invalid ax.25 address");
+
+	/* Test that a bad destination address causes a drop */
+	test_for_drop("BADDST", bad_dest, "dropping packet: invalid ax.25 address");
 
 	printf("OK\n");
 	return 0;
