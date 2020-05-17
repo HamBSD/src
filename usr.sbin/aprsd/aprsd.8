@@ -6,12 +6,11 @@
 .Nd Automatic Packet Reporting System daemon
 .Sh SYNOPSIS
 .Nm
-.Op Fl DG
-.Op Fl g Ar sensor
-.Op Fl i Ar interface
-.Op Fl p Ar period
-.Op Fl l Ar latitude
-.Op Fl L Ar longitude
+.Op Fl Dvs
+.Op Fl f Ar configfile
+.Ar callsign Ns Op -ssid
+.Ar if0
+.Op Ar if1 Op Ar ...
 .Sh DESCRIPTION
 .Nm
 sends
@@ -38,17 +37,14 @@ is configured using the
 configuration file.
 This defines the beacons to be sent periodically, and filter rules for
 digipeater functionality.
-The callsign found in
-.Xr mycallsign 5
-will be used as the originating address for position beacons.
-The SSID is hardcoded as -6 for now.
 .Pp
 APRS uses
 .Em AX.25
-as a link layer, which restricts callsign length to at most 6 characters.
-If your callsign is longer than 6 characters then
+as a link layer.
+If you specify an interface that is not an AX.25 interface then
 .Nm
 will refuse to start.
+At least one interface is required.
 .Pp
 The
 .Xr nmea 4
@@ -64,13 +60,16 @@ provides a valid position again.
 .Bl -tag -width Ds
 .It Fl D
 Do not daemonize.
-.It Fl i Ar interface
-Interface name to broadcast position reports (default: axkiss0).
+.It Fl v
+Verbose output.
+.It Fl s
+Skip initial delay before sending beacons.
+.It Fl f Ar configfile
+Use an alternative configuration file (default: /etc/aprsd.conf).
 .El
 .Sh SEE ALSO
 .Xr nmea 4 ,
-.Xr aprsd.conf 5 ,
-.Xr mycallsign 5
+.Xr aprsd.conf 5
 .Sh HISTORY
 .Nm
 first appeared in HamBSD XXX.
@@ -78,7 +77,7 @@ first appeared in HamBSD XXX.
 The
 .Nm
 daemon was written for the HamBSD project by
-.An Iain R. Learmonth Aq Mt irl@fsfe.org
+.An Iain R. Learmonth Aq Mt irl@hambsd.org
 for the public domain.
 .Sh CAVEATS
 It is not currently possible to broadcast position reports on multiple

@@ -4,7 +4,6 @@
  * Written by Iain R. Learmonth <irl@fsfe.org> for the public domain.
  */
 
-#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -26,15 +25,16 @@
 #include <net/bpf.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
+#include <netax25/if_ax25.h>
 
 #include "aprsd.h"
 #include "gps.h"
+#include "log.h"
 
 struct aprs_interface {
 	int		 ai_fd;		/* file descriptor */
 	int		 ai_rbufsize;	/* receive buffer size */
-	char		*ai_name;	/* interface name, (e.g. axtap0) */
+	const char	*ai_name;	/* interface name, (e.g. axtap0) */
 };
 
 struct aprs_beacon_attrs {
@@ -43,7 +43,6 @@ struct aprs_beacon_attrs {
 	time_t		 next_time;	/* next beacon time */
 	int		 interval;	/* beacon period */
 	int		 flags;		/* aprsd.h: BEACONF_* */
-	int		 ssid;		/* SSID, 0-15 */
 	int		 type;		/* aprsd.h: BEACONT_* */
 	char		*call;		/* callsign as ascii text */
 	char		*comment;	/* comment text */
@@ -51,15 +50,14 @@ struct aprs_beacon_attrs {
 	char		*sensor;	/* gps sensor name (e.g. nmea0) */
 };
 
-static __dead void		 fatal(char *);
 static __dead void		 usage(void);
 static void			 signal_handler(int);
-static char 			*aprs_lat_ntoa(long long);
-static char 			*aprs_lon_ntoa(long long);
+static char 			*aprs_lat_ntoa(const long long);
+static char 			*aprs_lon_ntoa(const long long);
 static char			*read_mycallsign(void);
-static struct aprs_interface	*aprs_lookup_interface(int);
+static struct aprs_interface	*aprs_lookup_interface(const int);
 static int			 aprs_compose(char *, struct aprs_beacon_attrs *);
-static struct aprs_interface	*aprs_open(char *);
+static struct aprs_interface	*aprs_open(const char *);
 static void			 daemonize();
 static void			*aprs_beacon_loop(int, struct aprs_beacon_attrs *[]);
 
@@ -67,19 +65,11 @@ struct aprs_interface *aifs[20];
 int naifs = 0;
 
 static __dead void
-fatal(char* msg)
-{
-	syslog(LOG_DAEMON | LOG_ERR,
-	    "%s", msg);
-	exit(1);
-}
-
-static __dead void
 usage(void)
 {
 	extern char *__progname;
 
-	fprintf(stderr, "usage: %s [-D] [-s] [-f file] [if0 [... ifN]]\n",
+	fprintf(stderr, "usage: %s [-Dvs] [-s] [-f file] callsign[-ssid] if0 [... ifN]\n",
 	    __progname);
 	exit(1);
 }
@@ -89,31 +79,32 @@ signal_handler(int sig)
 {
 	switch(sig) {
 	case SIGHUP:
-		syslog(LOG_DAEMON | LOG_INFO, "caught hangup signal");
+		log_warnx("caught hangup signal");
 		break;
 	case SIGTERM:
-		syslog(LOG_DAEMON | LOG_EMERG,
-		    "caught terminate signal, shutting down");
+		log_warnx("caught terminate signal, shutting down");
 		exit(0);
 		break;
 	}
 }
 
 static char *
-aprs_lat_ntoa(long long udeg)
+aprs_lat_ntoa(const long long udeg)
 {
 	static char buf[9];
+	long long u;
 	long deg, rem, umnt, mnt, dmt;
 	int north;
 	if (udeg < 0) {
-		udeg *= -1;
+		u = udeg * -1;
 		north = 0;
 	} else {
+		u = udeg;
 		north = 1;
 	}
-	deg = udeg / 1000000;
+	deg = u / 1000000;
 	snprintf(buf, 3, "%02ld", deg);
-	umnt = udeg % 1000000 * 60;
+	umnt = u % 1000000 * 60;
 	mnt = umnt / 1000000;
 	snprintf(&buf[2], 3, "%02ld", mnt);
 	buf[4] = '.';
@@ -129,20 +120,22 @@ aprs_lat_ntoa(long long udeg)
 }
 
 static char *
-aprs_lon_ntoa(long long udeg)
+aprs_lon_ntoa(const long long udeg)
 {
 	static char buf[10];
+	long long u;
 	long deg, rem, umnt, mnt, dmt;
 	int east;
 	if (udeg < 0) {
-		udeg *= -1;
+		u = udeg * -1;
 		east = 0;
 	} else {
+		u = udeg;
 		east = 1;
 	}
-	deg = udeg / 1000000;
+	deg = u / 1000000;
 	snprintf(buf, 4, "%03ld", deg);
-	umnt = udeg % 1000000 * 60;
+	umnt = u % 1000000 * 60;
 	mnt = umnt / 1000000;
 	snprintf(&buf[3], 3, "%02ld", mnt);
 	buf[5] = '.';
@@ -157,29 +150,8 @@ aprs_lon_ntoa(long long udeg)
 	return buf;
 }
 
-static char *
-read_mycallsign(void)
-{
-	static char fcall[20];
-	FILE    *mcp;
-	char    *call, *nl;
-	size_t  callsize = 0;
-	ssize_t calllen;
-
-	call = NULL;
-
-	if ((mcp = fopen("/etc/mycallsign", "r")) == NULL)
-		fatal("could not open /etc/mycallsign");
-	if ((calllen = getline(&call, &callsize, mcp)) != -1) {
-		if ((nl = strchr(call, '\n')) != NULL)
-			nl[0] = '\0';
-		return call;
-	}
-	fatal("could not read callsign from /etc/mycallsign");
-}
-
 static struct aprs_interface *
-aprs_lookup_interface(int fd)
+aprs_lookup_interface(const int fd)
 {
 	int i;
 	for (i = 0; i < naifs; i++)
@@ -292,13 +264,8 @@ aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
 	free(lat);
 	free(lon);
 
-	calllen = strlen(attrs->call);
-	if (calllen > 6) {
-		fatal("callsign in /etc/mycallsign too long");
-	}
-	for (i = 0; i < calllen; i++)
-		buf[7 + i] = attrs->call[i] << 1;
-	buf[13] = (attrs->ssid << 1) | 0xe1;
+	memcpy(&buf[7], ax25_aton(attrs->call), AX25_ADDR_LEN);
+	buf[13] |= 0xe1;
 
 	if (attrs->comment != NULL) {
 		commentlen = strlen(attrs->comment);
@@ -319,7 +286,7 @@ aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
  * Set immediate mode.
  */
 struct aprs_interface *
-aprs_open(char *device)
+aprs_open(const char *device)
 {
 	int iflen, yes;
 	struct ifreq bound_if;
@@ -345,7 +312,6 @@ aprs_open(char *device)
 	yes = BPF_DIRECTION_OUT;
 
 	if (ioctl(aif->ai_fd, BIOCSDIRFILT, &yes) == -1) {
-		warn("di");
 		fatal("could not set direction filter");
 	}
 
@@ -389,14 +355,28 @@ aprs_digipeat(char* pkt, int pktlen, struct aprs_interface *src)
 	/* TODO: so much error handling */
 }
 
+void
+beacon_transmit(struct aprs_beacon_attrs *beacon_attrs)
+{
+	unsigned char framebuf[512];
+	size_t framelen;
+	int i;
+
+	framelen = aprs_compose(framebuf, beacon_attrs);
+	for (i = 0; i < naifs; i++)
+		if (write(aifs[i]->ai_fd, &framebuf, framelen) != framelen)
+			log_warn("failed to send packet");
+}
+
 static void *
 aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 {
 	struct kevent chlist[10];
 	struct kevent evlist[10];
-	char framebuf[9000];
-	int bi, ii, evi, framelen, kq, nev, nr;
+	struct timespec now;
+	int bi, ii, evi, kq, nev, nr;
 	struct aprs_interface *aif;
+	unsigned char framebuf[512];
 
 	if ((kq = kqueue()) == -1)
 		fatal("failed to create kqueue");
@@ -406,8 +386,7 @@ aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 	for (ii = 0; ii < naifs; ii++)
 		EV_SET(&chlist[ii + 1], aifs[ii]->ai_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
 
-	syslog(LOG_DAEMON | LOG_INFO,
-	    "started up beacon loop (callsign: %s)", beacons[0]->call);
+	log_info("started up beacon loop (callsign: %s)", beacons[0]->call);
 
 	while ((nev = kevent(kq, chlist, naifs + 1, evlist, naifs + 1, NULL)) > 0) {
 		for (evi = 0; evi < nev; evi++) {
@@ -426,14 +405,11 @@ aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 				}
 				continue;
 			}
-			time_t now;
-			time(&now);
+			clock_gettime(CLOCK_MONOTONIC, &now);
 			for (bi = 0; bi < num_beacons; bi++) {
-				if (beacons[bi]->next_time <= now) {
-					framelen = aprs_compose(framebuf, beacons[bi]);
-					if (write(aifs[0]->ai_fd, &framebuf, framelen) != framelen)
-						syslog(LOG_DAEMON | LOG_ERR, "failed to send packet: %m");
-					beacons[bi]->next_time = now + beacons[bi]->interval;
+				if (beacons[bi]->next_time <= now.tv_sec) {
+					beacon_transmit(beacons[bi]);
+					beacons[bi]->next_time = now.tv_sec + beacons[bi]->interval;
 				}
 			}
 		}
@@ -446,39 +422,31 @@ main(int argc, char **argv)
 {
 	struct aprsd_config conf;
 	struct aprs_beacon_attrs *beacons[20];
-	int ci, daemon, skipdelay, ssid;
-	char ch, *conffile, *device;
-	const char *errstr;
+	int ci, debug, skipdelay, verbose;
+	char ch, *conffile;
 
-	conf.num_beacons = 0;
-
-	/* option defaults */
-	conffile = "/etc/aprsd.conf";
-	daemon = 1;
-	device = "axkiss0";
+	debug = 0;
+	verbose = 0;
 	skipdelay = 0;
-	ssid = 0;
+	conffile = "/etc/aprsd.conf";
 
-	while ((ch = getopt(argc, argv, "DS:i:f:s")) != -1) {
+	/* Check for root privileges. */
+	if (geteuid())
+		fatalx("need root privileges");
+
+	while ((ch = getopt(argc, argv, "Dvsf:")) != -1) {
 		switch (ch) {
-		case 'i':
-			device = optarg;
-			break;
-		case 'f':
-			conffile = optarg;
 		case 'D':
-			daemon = 0;
+			debug = 1;
+			break;
+		case 'v':
+			verbose = 1;
 			break;
 		case 's':
 			skipdelay = 1;
 			break;
-		case 'S':
-			ssid = strtonum(optarg, 0, 15, &errstr);
-			if (errstr) {
-				warnx("SSID is %s: %s", errstr, optarg);
-				usage();
-			}
-			break;
+		case 'f':
+			conffile = optarg;
 		default:
 			usage();
 			break;
@@ -487,31 +455,33 @@ main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 0)
-		fatal("no interfaces specified");
+	if (argc < 2)
+		usage();
 
+	log_init(debug, LOG_DAEMON);
+	log_setverbose(verbose);
+
+	log_debug("log init");
+
+	char *call = argv[0];
+
+	/* TODO: is this necessary or can it go in parse_config */
+	conf.num_beacons = 0;
 	if (parse_config(conffile, &conf) == -1)
-		fatal("could not parse config");
+		fatalx("could not parse config");
+	if (conf.num_beacons == 0)
+		fatal("refusing to run without beacons defined");
 
-	char *call = read_mycallsign();
-
-	/* Check for root privileges. */
-	if (geteuid())
-		fatal("need root privileges");
-
-	if (daemon)
+	if (!debug)
 		daemonize();
 
-	for (naifs = 0; naifs < argc; naifs++)
-		aifs[naifs] = aprs_open(argv[naifs]);
+	for (naifs = 0; naifs < argc - 1; naifs++)
+		aifs[naifs] = aprs_open(argv[naifs + 1]);
 
 	if (unveil(NULL, NULL) == -1)
 		fatal("failed to unveil");
 	if (pledge("stdio cpath wpath", NULL) == -1)
 		fatal("failed to pledge");
-
-	if (conf.num_beacons == 0)
-		fatal("refusing to run without beacons defined");
 
 	for (ci = 0; ci < conf.num_beacons; ci++) {
 		struct beacon_config *bc = conf.beacons[ci];
@@ -545,7 +515,6 @@ main(int argc, char **argv)
 			ba->sensor = bc->sensor;
 			ba->comment = bc->comment;
 			ba->call = call;
-			ba->ssid = ssid;
 			break;
 		default:
 			fatal("unknown beacon type");
