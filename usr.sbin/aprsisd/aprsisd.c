@@ -38,6 +38,15 @@
  * http://www.aprs-is.net/Connecting.aspx
  */
 
+/* Interval between station capabilities beacons */
+#define CAPS_BEACON_INTERVAL 1800
+
+/* Timeout for local stations to be removed from heard list */
+#define LOC_TIMEOUT 1800
+
+/* Maximum length in time to wait for data before reconnecting */
+#define TCP_TIMEOUT 45
+
 struct heard_entry {
 	struct ax25_addr addr;
 	struct timespec lastheard;
@@ -46,6 +55,8 @@ struct heard_entry {
 LIST_HEAD(heard_list, heard_entry) heard;
 
 struct timespec		 tcp_lastinput; /* last time data was received on tcp connection */
+struct timespec		 next_beacon; /* time to send the next station caps */
+long			 msg_cnt = 0;
 int			 tap; /* file descriptor for tap device */
 int			 tcp; /* file descriptor for tcp connection */
 int			 usetls; /* command line flag -t */
@@ -58,7 +69,7 @@ static __dead void usage(void);
 static void	 signal_handler(int sig);
 static void	 daemonize(void);
 static char	*call_strip_ssid(void);
-static void	 send_station_capabilities(void);
+static void	 send_station_capabilities(int);
 static char	*aprsis_pass(void);
 static int	 ax25_input(const unsigned char *, const size_t);
 static int	 tnc2_output(const unsigned char *, const size_t);
@@ -69,7 +80,7 @@ static void	 aprsis_login_str(char *, char *, char *);
 static int	 aprsis_remote_write(const char *, const size_t);
 static int	 aprsis_remote_open(char *, char *, char *, char *);
 static void	 aprsis_local_open(char *);
-static int	 aprsis_local_shuffle(char *, char *, int);
+static int	 aprsis_local_shuffle(unsigned char *, unsigned char *, int);
 static void	 aprsis_loop(void);
 int		 main(int, char **);
 
@@ -99,9 +110,6 @@ usage(void)
 static void
 signal_handler(int sig)
 {
-	int hcnt;
-	struct heard_entry *hep;
-
 	switch (sig) {
 	case SIGHUP:
 		log_info("caught hangup signal");
@@ -139,22 +147,35 @@ call_strip_ssid()
 	return result;
 }
 
-static void
-send_station_capabilities()
+/* info size must be least 256 bytes. */
+static size_t
+format_station_capabilities_info(unsigned char *info)
 {
-	unsigned char pkt[22];
+	struct heard_entry *hp;
+	int loc_cnt = 0;
+
+	LIST_FOREACH(hp, &heard, entries) {
+		loc_cnt++;
+	}
+	return snprintf(info, 256, "<IGATE,LOC_CNT=%d,MSG_CNT=%ld", loc_cnt, msg_cnt);
+}
+
+static void
+send_station_capabilities(int rfonly)
+{
+	unsigned char pkt[270]; /* 16 (header) + 256 (info) */
+	int len;
 	memcpy(pkt, ax25_aton("APBSDI"), AX25_ADDR_LEN);
 	memcpy(AX25_ADDR_PTR(pkt, 1), ax25_aton("MM0ROR-10"), AX25_ADDR_LEN);
 	AX25_ADDR_PTR(pkt, 1)->ax25_addr_octet[6] |= AX25_LAST_MASK;
 	pkt[14] = 0x03;
 	pkt[15] = 0xf0;
-	pkt[16] = '<';
-	pkt[17] = 'I';
-	pkt[18] = 'G';
-	pkt[19] = 'A';
-	pkt[20] = 'T';
-	pkt[21] = 'E';
-	ax25_output(pkt, 22);
+	len = 16 + format_station_capabilities_info(&pkt[16]);
+	ax25_output(pkt, len);
+	if (rfonly == 0) {
+		log_info("capabilities: %s", &pkt[16]);
+		ax25_input(pkt, len);
+	}
 }
 
 static char *
@@ -198,7 +219,7 @@ static int
 ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25)
 {
 	unsigned char pkt_tnc2[TNC2_MAXLINE];
-	size_t tnc2_len;
+	size_t len_tnc2;
 
 	if (len_ax25 < 14)
 		/* TODO: should I log here? does ax25_to_tnc2 do this check? */
@@ -206,15 +227,15 @@ ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25)
 
 	ax25_heard(AX25_ADDR_PTR(pkt_ax25, 1));
 
-	tnc2_len = ax25_to_tnc2(pkt_tnc2, pkt_ax25, len_ax25);
+	len_tnc2 = ax25_to_tnc2(pkt_tnc2, pkt_ax25, len_ax25);
 
-	switch (tnc2_len) {
+	switch (len_tnc2) {
 	case 0:
 		/* Packet should be dropped */
 		return 0;
 	case 1:
 		/* This was a general IGate query */
-		send_station_capabilities();
+		send_station_capabilities(1);
 		return 0;
 	case 2:
 	case 3:
@@ -228,7 +249,7 @@ ax25_input(const unsigned char *pkt_ax25, const size_t len_ax25)
 		/* Keep these reserved as special cases. */
 		return 0;
 	default:
-		return tnc2_output(pkt_tnc2, tnc2_len);
+		return tnc2_output(pkt_tnc2, len_tnc2);
 	}
 }
 
@@ -253,18 +274,19 @@ tnc2_output(const unsigned char *pkt_tnc2, const size_t len)
 }
 
 static void
-ax25_output(const unsigned char *pkt, const size_t len)
+ax25_output(const unsigned char *pkt_ax25, const size_t len_ax25)
 {
-	if (write(tap, pkt, len) == -1)
+	if (write(tap, pkt_ax25, len_ax25) == -1)
 		fatal("ax25_output: write");
 }
 
 static void
-tnc2_input(const unsigned char *pkt_tnc2, size_t tnc2_len)
+tnc2_input(const unsigned char *pkt_tnc2, const size_t len_tnc2)
 {
 	unsigned char pkt_ax25[1024];
 	const unsigned char *payload = NULL;
-	int i, tp;
+	size_t len_ax25;
+	int i;
 
 	memcpy(pkt_ax25, ax25_aton("APBSDI"), AX25_ADDR_LEN);
 	memcpy(AX25_ADDR_PTR(pkt_ax25, 1), ncall, AX25_ADDR_LEN);
@@ -272,11 +294,12 @@ tnc2_input(const unsigned char *pkt_tnc2, size_t tnc2_len)
 	pkt_ax25[14] = 0x03;
 	pkt_ax25[15] = 0xf0;
 	pkt_ax25[16] = '}';
+	len_ax25 = 17;
 
 	/* Identify the start of the payload */
-	for (tp = 0; tp < tnc2_len; tp++) {
-		if (pkt_tnc2[tp] == ':') {
-			payload = &pkt_tnc2[tp];
+	for (i = 0; i < len_tnc2; i++) {
+		if (pkt_tnc2[i] == ':') {
+			payload = &pkt_tnc2[i];
 			break;
 		}
 	}
@@ -286,21 +309,56 @@ tnc2_input(const unsigned char *pkt_tnc2, size_t tnc2_len)
 		return;
 	}
 
-	for (tp = 0; &pkt_tnc2[tp] < payload; tp++) {
-		if (pkt_tnc2[tp] == ',') {
-			memcpy(&pkt_ax25[17], pkt_tnc2, tp);
+	for (i = 0; &pkt_tnc2[i] < payload; i++) {
+		if (pkt_tnc2[i] == ',') {
+			memcpy(&pkt_ax25[len_ax25], pkt_tnc2, i);
+			len_ax25 += i;
 			break;
 		}
 	}
 
-	if (&pkt_tnc2[tp] == payload) {
+	if (&pkt_tnc2[i] == payload) {
 		log_debug("dropping packet: never found a comma in the header");
 		return;
 	}
 
-	memcpy(&pkt_ax25[17 + tp], payload, tnc2_len - (payload - pkt_tnc2));
+	memcpy(&pkt_ax25[len_ax25], payload, len_tnc2 - (payload - pkt_tnc2));
+	len_ax25 += len_tnc2 - (payload - pkt_tnc2);
 
-	ax25_output(pkt_ax25, 15 + tp + (tnc2_len - (payload - pkt_tnc2)));
+	msg_cnt++;
+	ax25_output(pkt_ax25, len_ax25);
+}
+
+static void
+aprsis_input(const unsigned char *isb, const ssize_t len_isb)
+{
+	static size_t len_tnc2 = 0;
+	static unsigned char pkt_tnc2[TNC2_MAXLINE];
+	int i;
+	unsigned char dbg_tnc2[(TNC2_MAXLINE * 4) + 1];
+	if (len_isb == -1) {
+		log_debug("aprsis_input: reset");
+		len_tnc2 = 0;
+		return;
+	}
+	log_debug("aprsis_input: %zu bytes", len_isb);
+	for (i = 0; i < len_isb; i++) {
+		switch (isb[i]) {
+			case '\r':
+				/* FALLTHROUGH */
+			case '\n':
+				if (len_tnc2 > 9 && pkt_tnc2[0] != '#') {
+					strvisx(dbg_tnc2, pkt_tnc2, len_tnc2, VIS_WHITE);
+					log_debug("rcv: %s", dbg_tnc2);
+					tnc2_input(pkt_tnc2, len_tnc2);
+				}
+				len_tnc2 = 0;
+				break;
+			default:
+				pkt_tnc2[len_tnc2++] = isb[i];
+				break;
+		}
+	}
 }
 
 static void *
@@ -426,7 +484,8 @@ aprsis_remote_open(char *server, char *port, char *pass,
 	hints.ai_socktype = SOCK_STREAM;
 
 	if ((rv = getaddrinfo(server, port, &hints, &servinfo)) != 0) {
-		fatalx("getaddrinfo: %s\n", gai_strerror(rv));
+		log_warnx("getaddrinfo: %s\n", gai_strerror(rv));
+		return -1;
 	}
 
 	for (p = servinfo; p != NULL; p = p->ai_next) {
@@ -457,10 +516,12 @@ aprsis_remote_open(char *server, char *port, char *pass,
 		break;
 	}
 
-	if (p == NULL)
-		fatalx("no servers available for %s", server);
-
 	freeaddrinfo(servinfo);
+
+	if (p == NULL) {
+		log_warnx("exhausted servers available for %s", server);
+		return -1;
+	}
 
 	log_debug("opened connection to %s", as);
 
@@ -488,8 +549,8 @@ aprsis_local_open(char *interface)
 	int i, sock;
 
 	if (interface != NULL) {
-		if (strlen(interface) < 2)
-			fatalx("interface name too short");
+		if (strlen(interface) < 6 || memcmp(interface, "axtap", 5) != 0)
+			fatalx("interface must be an axtap");
 		snprintf(ifpath, PATH_MAX, "/dev/%s", interface);
 		if ((tap = open(ifpath, O_RDWR)) == -1)
 			return;
@@ -507,7 +568,7 @@ aprsis_local_open(char *interface)
 	strlcpy(ifr.ifr_name, &ifpath[5], sizeof(ifr.ifr_name));
 	ifr.ifr_addr.sa_len = AX25_ADDR_LEN;
 	ifr.ifr_addr.sa_family = AF_LINK;
-	memcpy(ifr.ifr_addr.sa_data, ax25_aton(call), AX25_ADDR_LEN);
+	memcpy(ifr.ifr_addr.sa_data, ncall, AX25_ADDR_LEN);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -516,43 +577,16 @@ aprsis_local_open(char *interface)
 	
 }
 
-/*
- * Once a newline is found in the buffer, swap the CRLF (or just LF)
- * for NUL to terminate the string and pass it to tnc2_input. Any
- * remaining data in the buffer gets shuffled to the front and the
- * new position in the buffer is returned.
- */
-static int
-aprsis_local_shuffle(char *buf, char *ep, int pos)
-{
-	int ei = ep - buf;
-	if (buf[ei - 1] == '\r')
-		buf[ei - 1] = '\0';
-	buf[ei++] = '\0'; /* move index to start of new packet */
-	log_debug("rcv: %s\n", buf);
-	if (ei > 10 && buf[0] != '#')
-		/* a reasonable minimum length and not in-band signalling */
-		tnc2_input(buf, ei);
-	memmove(buf, &buf[ei], pos - ei);
-	pos -= ei;
-	return pos;
-}
-
 static void
 aprsis_loop(void)
 {
 	struct kevent chlist[4];
 	struct kevent evlist[4];
 	struct timespec now;
-	int evi, hcnt, nr, nev, r_pos;
+	int evi, nr, nev;
 	static int kq = -1;
-	char r_buf[TNC2_MAXLINE], *r_ep;
-	unsigned char l_buf[1500];
+	unsigned char buf[1500]; /* used for both SIGINFO log and axtap reads */
 	struct heard_entry *hep, *hetmp;
-
-	r_pos = 0;
-	bzero(r_buf, TNC2_MAXLINE);
-	bzero(l_buf, 1500);
 
 	if (kq == -1)
 		if ((kq = kqueue()) == -1)
@@ -573,24 +607,21 @@ aprsis_loop(void)
 
 	while ((nev = kevent(kq, chlist, 4, evlist, 4, NULL)) > 0) {
 		for (evi = 0; evi < nev; evi++) {
+			explicit_bzero(buf, 1500); /* purely defensive; shouldn't be required */
 			switch (evlist[evi].filter) {
 			case EVFILT_SIGNAL:
-				hcnt = 0;
-				LIST_FOREACH(hep, &heard, entries) {
-					hcnt++;
-				}
-				log_info("IGATE LOC_CNT=%d", hcnt);
+				buf[format_station_capabilities_info(buf)] = '\0';
+				log_info("%s", buf);
 				break;
 			case EVFILT_TIMER:
-				log_debug("loop: timer event");
 				clock_gettime(CLOCK_MONOTONIC, &now);
-				if (now.tv_sec - tcp_lastinput.tv_sec > 45) {
+				if (now.tv_sec - tcp_lastinput.tv_sec > TCP_TIMEOUT) {
 					log_debug("%lld seconds since last input",
 					    now.tv_sec - tcp_lastinput.tv_sec);
 					return;
 				}
 				LIST_FOREACH_SAFE(hep, &heard, entries, hetmp) {
-					if (now.tv_sec - hep->lastheard.tv_sec > 30) {
+					if (now.tv_sec - hep->lastheard.tv_sec > LOC_TIMEOUT) {
 						log_debug("heard entry %s expiring after %lld seconds",
 						    ax25_ntoa(&hep->addr),
 						    now.tv_sec - hep->lastheard.tv_sec);
@@ -598,30 +629,30 @@ aprsis_loop(void)
 						free(hep);
 					}
 				}
+				if (next_beacon.tv_sec < now.tv_sec) {
+					send_station_capabilities(0);
+					next_beacon.tv_sec = now.tv_sec + 18; //00;
+				}
 				break;
 			case EVFILT_READ:
 				if (evlist[evi].ident == tap) {
-					log_debug("loop: tap event");
-					if ((nr = read(tap, l_buf, 1500)) == -1 || nr == 0)
+					if ((nr = read(tap, buf, 1500)) == -1 || nr == 0)
 						fatal("read tap");
-					if (ax25_input(l_buf, nr) == -1)
+					if (ax25_input(buf, nr) == -1)
 						/* error occured writing to APRS-IS; let's reconnect */
 						return;
 				} else if (evlist[evi].ident == tcp) {
-					log_debug("loop: tcp event");
 					clock_gettime(CLOCK_MONOTONIC, &tcp_lastinput);
 					if (usetls) {
-						if (((nr = tls_read(tls_ctx, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1)) {
+						if ((nr = tls_read(tls_ctx, buf, TNC2_MAXLINE)) == -1) {
 							log_warnx("tls_read: %s", tls_error(tls_ctx));
 							return;
 						}
 					} else {
-						if (((nr = read(tcp, &r_buf[r_pos], TNC2_MAXLINE - r_pos)) == -1) || nr == 0)
+						if (((nr = read(tcp, buf, TNC2_MAXLINE)) == -1) || nr == 0)
 							return;
 					}
-					r_pos += nr;
-					if ((r_ep = strchr(r_buf, '\n')) != NULL)
-						r_pos = aprsis_local_shuffle(r_buf, r_ep, r_pos);
+					aprsis_input(buf, nr);
 				}
 				break;
 			}
@@ -645,6 +676,10 @@ main(int argc, char **argv)
 	port = "14580"; /* APRS-IS server port */
 	usetls = 0;
 	bidir = 0;
+
+	/* Check for root privileges. */
+	if (geteuid())
+		fatalx("need root privileges");
 
 	while ((ch = getopt(argc, argv, "Dvtbi:p:f:")) != -1) {
 		switch (ch) {
@@ -699,6 +734,8 @@ main(int argc, char **argv)
 		daemonize();
 
 	LIST_INIT(&heard);
+	clock_gettime(CLOCK_MONOTONIC, &next_beacon);
+	next_beacon.tv_sec += (CAPS_BEACON_INTERVAL / 2);
 
 	/* the path for the tap device is unknown until we open it */
 	aprsis_local_open(interface);
@@ -731,10 +768,11 @@ main(int argc, char **argv)
 		aprsis_loop();
 		if (usetls) {
 			if (tls_close(tls_ctx) == -1)
-				log_warnx("tls_write: %s", tls_error(tls_ctx));
+				log_warnx("tls_close: %s", tls_error(tls_ctx));
 			tls_free(tls_ctx);
 		}
 		close(tcp);
+		aprsis_input(NULL, -1); /* reset the buffer */
 		log_warnx("disconnected from server, reconnecting in 30 seconds...");
 		sleep(30);
 	}
