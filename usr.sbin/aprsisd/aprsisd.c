@@ -166,7 +166,7 @@ send_station_capabilities(int rfonly)
 	unsigned char pkt[270]; /* 16 (header) + 256 (info) */
 	int len;
 	memcpy(pkt, ax25_aton("APBSDI"), AX25_ADDR_LEN);
-	memcpy(AX25_ADDR_PTR(pkt, 1), ax25_aton("MM0ROR-10"), AX25_ADDR_LEN);
+	memcpy(AX25_ADDR_PTR(pkt, 1), ncall, AX25_ADDR_LEN);
 	AX25_ADDR_PTR(pkt, 1)->ax25_addr_octet[6] |= AX25_LAST_MASK;
 	pkt[14] = 0x03;
 	pkt[15] = 0xf0;
@@ -631,7 +631,7 @@ aprsis_loop(void)
 				}
 				if (next_beacon.tv_sec < now.tv_sec) {
 					send_station_capabilities(0);
-					next_beacon.tv_sec = now.tv_sec + 18; //00;
+					next_beacon.tv_sec = now.tv_sec + CAPS_BEACON_INTERVAL;
 				}
 				break;
 			case EVFILT_READ:
