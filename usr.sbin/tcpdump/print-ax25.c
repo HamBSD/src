@@ -21,6 +21,8 @@
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
+#include <stdlib.h>
+#include <vis.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 
@@ -61,19 +63,27 @@ ax25_print(const u_char *bp, u_int length)
 			     length);
 	} else {
 		/* check that enough header is captured to extract full path */
-		for (nd = 0;; ++nd) {
-			if (nd >= AX25_MAX_DIGIS)
-				goto trunc;
-			TCHECK2(*bp, 14 + (nd * 7) + 2);
-			if (bp[13 + (nd * 7)] & AX25_LAST_MASK)
-				break;
+		if (bp[13] & AX25_LAST_MASK) {
+			TCHECK2(*bp, 16);
+			nd = 0;
+		} else {
+			for (nd = 0;; ++nd) {
+				if (nd >= AX25_MAX_DIGIS)
+					goto trunc;
+				TCHECK2(*bp, 14 + (nd * 7) + 2);
+				if (bp[13 + (nd * 7)] & AX25_LAST_MASK)
+					break;
+			}
 		}
 		(void)printf("%s", 
 			     ax25_ntoa((struct ax25_addr *)&bp[7]));
 		(void)printf(">%s",
 			     ax25_ntoa((struct ax25_addr *)&bp[0]));
-		for (d = 0; d < nd; d++)
+		for (d = 0; d < nd; d++) {
 			(void)printf(",%s", ax25_ntoa((struct ax25_addr *)&bp[14 + (7 * d)]));
+			if ((bp[20 + (d * 7)] & AX25_CR_MASK) != 0)
+				putchar('*');
+		}
 		(void)printf(" %d:", length);
 	}
 	return;
@@ -110,6 +120,8 @@ ax25_tryprint(const u_char *p, u_int length, int first_header)
 {
 	u_int caplen = snapend - p;
 	const u_char *ep;
+	u_short control, pid;
+	int hdrlen, nd;
 
 	if (caplen < AX25_MIN_HDR_LEN) {
 		printf("[|ax25]");
@@ -120,14 +132,24 @@ ax25_tryprint(const u_char *p, u_int length, int first_header)
 		ax25_print(p, length);
 
 	/* TODO: get length of header */
+	for (nd = 0;; ++nd) {
+		if (nd >= AX25_MAX_DIGIS) {
+			printf("[|ax25]");
+			goto out;
+		}
+		if (p[13 + (nd * 7)] & AX25_LAST_MASK)
+			break;
+	}
 
+	control = p[14 + (nd * 7)];
+	pid = p[15 + (nd * 7)];
+
+	hdrlen = 16 + (7 * nd);
 	packetp = p;
-	//length -= sizeof(struct ether_header);
-	//caplen -= sizeof(struct ether_header);
-	ep = p; /* what is a header */
-	//p += sizeof(struct ether_header);
-
-	u_short control = 0, pid = 0;
+	length -= hdrlen;
+	caplen -= hdrlen;
+	ep = p;
+	p += hdrlen;
 
 	if (ax25_encap_print(control, pid, p, length, caplen) == 0) {
 		/* type not known, print raw packet */
@@ -165,16 +187,25 @@ int
 ax25_encap_print(u_short control, u_short pid, const u_char *p,
     u_int length, u_int caplen)
 {
+	char* abuf;
+
 	extracted_control = control;
 	extracted_pid = pid;
 
 	switch (pid) {
 
 #define AX25PROTO_IP 0xcc
+#define AX25PROTO_NOL3 0xf0
 
+	case AX25PROTO_NOL3:
+		abuf = malloc((length * 4) + 1);
+		strvisx(abuf, p, length, 0);
+		printf("%s", abuf);
+		free(abuf);
+		return 1;
 	case AX25PROTO_IP:
 		ip_print(p, length);
-		return (1);
+		return 1;
 	}
 
 	return 0;
