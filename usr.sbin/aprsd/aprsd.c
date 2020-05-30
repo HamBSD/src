@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <netax25/if_ax25.h>
 
+#include "aprs.h"
 #include "aprsd.h"
 #include "gps.h"
 #include "log.h"
@@ -48,6 +49,7 @@ struct aprs_beacon_attrs {
 	char		*comment;	/* comment text */
 	char		*name;		/* object/item name */
 	char		*sensor;	/* gps sensor name (e.g. nmea0) */
+	char		 symbol[2];
 };
 
 static __dead void		 usage(void);
@@ -160,48 +162,13 @@ aprs_lookup_interface(const int fd)
 	return NULL;
 }
 
-static const char pon_hdr[] = {
+static const char ax25_hdr[] = {
 	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
 	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
 	0x03,						/* ui frame */
 	0xf0,						/* no layer 3 */
-	'!',						/* position report, no timestamp */
-	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
-	'/',						/* table */
-	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
-	'/',						/* symbol */
 };
-static const int pon_hdr_size = sizeof(pon_hdr);
-
-static const char pot_hdr[] = {
-	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
-	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
-	0x03,						/* ui frame */
-	0xf0,						/* no layer 3 */
-	'/',						/* position report, with timestamp */
-	0, 0, 0, 0, 0, 0, 'z',				/* timestamp */
-	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
-	'/',						/* symbol table */
-	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
-	'/',						/* symbol */
-};
-static const int pot_hdr_size = sizeof(pot_hdr);
-
-static const char obj_hdr[] = {
-	'A' << 1, 'P' << 1, 'B' << 1, 'S' << 1, 'D' << 1, 'D' << 1, 0x60, /* destination */
-	0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0xed,	/* source */
-	0x03,						/* ui frame */
-	0xf0,						/* no layer 3 */
-	';',						/* object report */
-	' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',	/* object name */
-	'_',						/* object live */
-	0, 0, 0, 0, 0, 0, 'z',				/* timestamp */
-	0, 0, 0, 0, 0, 0, 0, 0,				/* latitude */
-	'/',						/* symbol table */
-	0, 0, 0, 0, 0, 0, 0, 0, 0,			/* longitude */
-	'/'						/* symbol */
-};
-static const int obj_hdr_size = sizeof(obj_hdr);
+static const int ax25_hdr_size = sizeof(ax25_hdr);
 
 /*
  * Composes an APRS position report. The length of the composed frame is
@@ -216,69 +183,53 @@ static const int obj_hdr_size = sizeof(obj_hdr);
 static int
 aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
 {
-	struct gps_position pos;
-	time_t now;
-	char *lat, *lon, *name, timestamp[7];
-	int calllen, commentlen, pktlen, i;
+	struct gps_position gps;
+	struct aprs_object ao;
+	ssize_t len_info;
+	char buf_info[256];
 
-	if (attrs->sensor != NULL && gps_get_position(&pos, attrs->sensor) == 2) {
-		lat = strdup(aprs_lat_ntoa(pos.lat));
-		lon = strdup(aprs_lon_ntoa(pos.lon));
+	memcpy(buf, ax25_hdr, ax25_hdr_size);
+
+	aprs_obj_init(&ao);
+
+	if ((attrs->sensor != NULL) && (gps_get_position(&gps, attrs->sensor) == 2)) {
+		ao.ao_lat = gps.lat;
+		ao.ao_lon = gps.lon;
 	} else if ((attrs->flags & BEACONF_POSSET) == BEACONF_POSSET) {
-		lat = strdup(aprs_lat_ntoa(attrs->fixed_lat));
-		lon = strdup(aprs_lon_ntoa(attrs->fixed_lon));
+		ao.ao_lat = attrs->fixed_lat;
+		ao.ao_lon = attrs->fixed_lon;
 	} else {
 		return 0;
 	}
 
-	time(&now);
-	strftime(timestamp, 7, "%d%H%M", gmtime(&now));
+	memcpy(ao.ao_symbol, attrs->symbol, 2);
+	strcpy(ao.ao_comment, attrs->comment);
 
 	switch (attrs->type) {
 	case BEACONT_PON:
-		pktlen = pon_hdr_size;
-		memcpy(buf, pon_hdr, pktlen);
-		memcpy(&buf[17], lat, 8);
-		memcpy(&buf[26], lon, 9);
-		break;
+		aprs_obj_item(&ao, 1);
+		/* FALLTHROUGH */
 	case BEACONT_POT:
-		pktlen = pot_hdr_size;
-		memcpy(buf, pot_hdr, pktlen);
-		memcpy(&buf[17], timestamp, 6);
-		memcpy(&buf[24], lat, 8);
-		memcpy(&buf[33], lon, 9);
+		aprs_obj_item(&ao, 1);
+		len_info = aprs_compose_pos_info(buf_info, &ao);
 		break;
 	case BEACONT_OBJ:
-		pktlen = obj_hdr_size;
-		memcpy(buf, obj_hdr, pktlen);
-		memcpy(&buf[17], attrs->name, strlen(attrs->name));
-		memcpy(&buf[27], timestamp, 6);
-		memcpy(&buf[34], lat, 8);
-		memcpy(&buf[43], lon, 9);
+		strlcpy(ao.ao_name, attrs->name, 10);
+		aprs_obj_item(&ao, 1);
+		len_info = aprs_compose_obj_info(buf_info, &ao);
 		break;
 	default:
 		/* TODO: unknown type */
 		return 0;
 	}
 
-	free(lat);
-	free(lon);
+
+	memcpy(&buf[16], buf_info, len_info);
 
 	memcpy(&buf[7], ax25_aton(attrs->call), AX25_ADDR_LEN);
 	buf[13] |= 0xe1;
 
-	if (attrs->comment != NULL) {
-		commentlen = strlen(attrs->comment);
-		if (commentlen < APRS_MAXLEN - pktlen) { /* TODO: could be less than or equal? went conservative */
-			memcpy(&buf[pktlen], attrs->comment, commentlen);
-			pktlen += commentlen;
-		} else {
-			/* TODO: comment too big */
-			return 0;
-		}
-	}
-
-	return pktlen;
+	return 16 + len_info;
 }
 
 /*
@@ -515,6 +466,7 @@ main(int argc, char **argv)
 			ba->sensor = bc->sensor;
 			ba->comment = bc->comment;
 			ba->call = call;
+			memcpy(ba->symbol, bc->symbol, 2);
 			break;
 		default:
 			fatal("unknown beacon type");

@@ -79,12 +79,11 @@ typedef struct {
 %}
 
 %token	ALTITUDE BEACON COMMENT EAST INTERVAL LATITUDE LONGITUDE
-%token	NAME NORTH NO_TIMESTAMP OBJECT POSITION SENSOR SOUTH
+%token	NAME NORTH NO_TIMESTAMP OBJECT POSITION SENSOR SOUTH SYMBOL
 %token	WEST
 %token	<v.string>	STRING
 %type	<v.number>	number
 %type	<v.string>	string
-%type	<v.addr>	address
 %%
 
 grammar		: /* empty */
@@ -139,6 +138,8 @@ beacon		: BEACON {
 			curbeacon->sensor = NULL;
 			curbeacon->flags = 0;
 			curbeacon->interval = 300;
+			curbeacon->symbol[0] = '/';
+			curbeacon->symbol[1] = '/';
 		} beacon_opts {
 			conf->num_beacons++;
 		}
@@ -171,6 +172,7 @@ beaposopt	: intervalopt
 		| lonopt
 		| latopt
 		| commentopt
+		| symbolopt
 		;
 
 intervalopt	: INTERVAL number	{
@@ -218,23 +220,16 @@ commentopt	: COMMENT string	{
 		}
 		;
 
-address		: STRING		{
-			int	n;
-
-			if ((n = inet_pton(AF_INET, $1, &$$)) == -1) {
-				yyerror("inet_pton: %s", strerror(errno));
+symbolopt	: SYMBOL string		{
+	  		if (strlen($2) != 2) {
+				yyerror("symbol must be exactly two characters");
 				YYERROR;
 			}
-			if (n == 0) {
-				yyerror("could not parse address spec %s", $1);
-				YYERROR;
-			}
+	  		curbeacon->symbol[0] = $2[0];
+			curbeacon->symbol[1] = $2[1];
 		}
 		;
 
-optnl		: '\n' optnl
-		|
-		;
 
 %%
 
@@ -284,6 +279,7 @@ lookup(char *s)
 		{ "position",		POSITION },
 		{ "sensor",		SENSOR },
 		{ "south",		SOUTH },
+		{ "symbol",		SYMBOL },
 		{ "west",		WEST },
 	};
 	const struct keywords	*p;

@@ -22,6 +22,7 @@ struct beacon_config {
 	char *comment;
 	char *name;
 	char *sensor;
+	char symbol[2];
 };
 
 #define MAX_BEACONS 20
