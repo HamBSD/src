@@ -316,7 +316,7 @@ beacon_transmit(struct aprs_beacon_attrs *beacon_attrs)
 	framelen = aprs_compose(framebuf, beacon_attrs);
 	for (i = 0; i < naifs; i++)
 		if (write(aifs[i]->ai_fd, &framebuf, framelen) != framelen)
-			log_warn("failed to send packet");
+			log_warnx("failed to send packet");
 }
 
 static void *
