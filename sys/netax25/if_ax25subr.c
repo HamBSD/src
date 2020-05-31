@@ -13,6 +13,7 @@
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <netax25/if_ax25.h>
+#include <netinet/in.h>
 
 u_int8_t ax25broadcastaddr[AX25_ADDR_LEN] =
     { 'Q' << 1, 'S' << 1, 'T' << 1, ' ' << 1, ' ' << 1, ' ' << 1, 0 };
@@ -25,6 +26,8 @@ u_int8_t ax25nulladdr[AX25_ADDR_LEN] =
 struct ax25_header {
 	struct ax25_addr ax25_dhost;
 	struct ax25_addr ax25_shost;
+	u_char ax25_control;
+	u_char ax25_pid;
 };
 
 /*
@@ -33,19 +36,53 @@ struct ax25_header {
 int
 ax25_input(struct ifnet *ifp, struct mbuf *m, void *cookie)
 {
+	struct ax25_header *ah;
+
 	/* Drop short frames */
 	if (m->m_len < AX25_MIN_HDR_LEN)
 		goto dropanyway;
 
-	/* TODO: do something with the packet in the future */
+	/* XXX: is this necessary? maybe we will always have at least 16 bytes */
+	m = m_pullup(m, 16);
+	if (m == NULL)
+		return 1;
+	ah = mtod(m, struct ax25_header *);
+
+	/* No kernel support for paths */
+	if ((ah->ax25_shost.ax25_addr_octet[6] & AX25_LAST_MASK) == 0)
+		goto dropanyway;
+
+	/* Only UI frames are cool */
+	if (ah->ax25_control != 0x03)
+		goto dropanyway;
+
+	m_adj(m, sizeof(*ah));
+
+	switch (ah->ax25_pid) {
+	case 0xCC:
+		/* currently causes nasty crashes */
+		//ipv4_input(ifp, m);
+		break;
+	case 0xF0:
+		/* No kernel support for APRS */
+		goto dropanyway;
+	default:
+		goto dropanyway;
+	}
 
 dropanyway:
 	m_freem(m);
 	return 1;
 }
 
+void
+ax25_rtrequest(struct ifnet *ifp, int req, struct rtentry *rt)
+{
+	return;
+}
+
 /*
- * Create a simple (and incomplete) AX.25 header.
+ * Create an AX.25 header.
  */
 int
 ax25_resolve(struct ifnet *ifp, struct mbuf *m, struct sockaddr *dst,
@@ -55,6 +92,11 @@ ax25_resolve(struct ifnet *ifp, struct mbuf *m, struct sockaddr *dst,
 	sa_family_t af = dst->sa_family;
 
 	switch (af) {
+	case AF_INET:
+		memcpy(&ah->ax25_dhost, ax25broadcastaddr, AX25_ADDR_LEN);
+		ah->ax25_pid = 0xCC;
+		ah->ax25_control = 0x03;
+		break;
 	case pseudo_AF_HDRCMPLT:
 		/* take the src and dst from the sa */
 		memcpy(ah, dst->sa_data, sizeof(*ah));
@@ -68,7 +110,8 @@ ax25_resolve(struct ifnet *ifp, struct mbuf *m, struct sockaddr *dst,
 		senderr(EAFNOSUPPORT);
 	}
 
-	memcpy(&ah->ax25_shost, LLADDR(ifp->if_sadl), ifp->if_addrlen);
+	memcpy(&ah->ax25_shost, LLADDR(ifp->if_sadl), AX25_ADDR_LEN);
+	ah->ax25_shost.ax25_addr_octet[6] |= AX25_LAST_MASK;
 
 	return 0;
 
@@ -94,8 +137,6 @@ ax25_encap(struct ifnet *ifp, struct mbuf *m, struct sockaddr *dst,
 		*errorp = error;
 		return NULL;
 	}
-
-	return m;
 
 	m = m_prepend(m, sizeof(struct ax25_header), M_DONTWAIT);
 	if (m == NULL) {
@@ -130,9 +171,10 @@ ax25_ifattach(struct ifnet *ifp)
 {
 	ifp->if_type = IFT_AX25;
 	ifp->if_addrlen = AX25_ADDR_LEN;
-	ifp->if_hdrlen = AX25_MIN_HDR_LEN;
+	ifp->if_hdrlen = sizeof(struct ax25_header);
 	ifp->if_mtu = AX25_MTU;
 	ifp->if_output = ax25_output;
+	ifp->if_rtrequest = ax25_rtrequest;
 
 	if_ih_insert(ifp, ax25_input, NULL);
 

@@ -65,6 +65,15 @@ struct ax25_addr {
 #define AX25_SSID_MASK		0b00011110	/* SSID bits		*/
 #define AX25_LAST_MASK		0b00000001	/* Final address bit	*/
 
+/* The following macros provide pointers to structures inside
+ * AX.25 packets:
+ *  p is the pointer to the start of the packet
+ *  n is the number of digipeater hops plus 2 */
+#define AX25_ADDR_PTR(p, n)      ((struct ax25_addr *)(&p[AX25_ADDR_LEN * n]))
+#define AX25_CTRL(p, n)          (p[(AX25_ADDR_LEN * (n + 1))])
+#define AX25_PID(p, n)           (p[(AX25_ADDR_LEN * (n + 1)) + 1])
+#define AX25_INFO_PTR(p, n)      (&p[(AX25_ADDR_LEN * (n + 1)) + 2])
+
 //#include <netax25/protocols.h>
 
 #define	AX25_IS_BROADCAST(addr) \
