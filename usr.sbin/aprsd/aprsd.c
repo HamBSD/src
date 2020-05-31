@@ -38,33 +38,20 @@ struct aprs_interface {
 	const char	*ai_name;	/* interface name, (e.g. axtap0) */
 };
 
-struct aprs_beacon_attrs {
-	long long	 fixed_lon;	/* fixed longitude if no GPS */
-	long long	 fixed_lat;	/* fixed latitude if no GPS */
-	time_t		 next_time;	/* next beacon time */
-	int		 interval;	/* beacon period */
-	int		 flags;		/* aprsd.h: BEACONF_* */
-	int		 type;		/* aprsd.h: BEACONT_* */
-	char		*call;		/* callsign as ascii text */
-	char		*comment;	/* comment text */
-	char		*name;		/* object/item name */
-	char		*sensor;	/* gps sensor name (e.g. nmea0) */
-	char		 symbol[2];
-};
-
 static __dead void		 usage(void);
 static void			 signal_handler(int);
 static char 			*aprs_lat_ntoa(const long long);
 static char 			*aprs_lon_ntoa(const long long);
 static char			*read_mycallsign(void);
 static struct aprs_interface	*aprs_lookup_interface(const int);
-static int			 aprs_compose(char *, struct aprs_beacon_attrs *);
+static int			 aprs_compose(char *, struct aprs_object *);
 static struct aprs_interface	*aprs_open(const char *);
 static void			 daemonize();
-static void			*aprs_beacon_loop(int, struct aprs_beacon_attrs *[]);
+static void			*aprs_beacon_loop(void);
 
-struct aprs_interface *aifs[20];
-int naifs = 0;
+struct aprsd_config	 conf;
+struct aprs_interface	*aifs[20];
+int			 naifs = 0;
 
 static __dead void
 usage(void)
@@ -181,18 +168,15 @@ static const int ax25_hdr_size = sizeof(ax25_hdr);
  * support them.
  */
 static int
-aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
+aprs_compose(char *buf, struct aprs_object *ao)
 {
 	struct gps_position gps;
-	struct aprs_object ao;
 	ssize_t len_info;
 	char buf_info[256];
 
 	memcpy(buf, ax25_hdr, ax25_hdr_size);
 
-	aprs_obj_init(&ao);
-
-	if ((attrs->sensor != NULL) && (gps_get_position(&gps, attrs->sensor) == 2)) {
+	/* if ((attrs->sensor != NULL) && (gps_get_position(&gps, attrs->sensor) == 2)) {
 		ao.ao_lat = gps.lat;
 		ao.ao_lon = gps.lon;
 	} else if ((attrs->flags & BEACONF_POSSET) == BEACONF_POSSET) {
@@ -200,33 +184,16 @@ aprs_compose(char *buf, struct aprs_beacon_attrs *attrs)
 		ao.ao_lon = attrs->fixed_lon;
 	} else {
 		return 0;
-	}
+	} */
 
-	memcpy(ao.ao_symbol, attrs->symbol, 2);
-	strcpy(ao.ao_comment, attrs->comment);
-
-	switch (attrs->type) {
-	case BEACONT_PON:
-		aprs_obj_item(&ao, 1);
-		/* FALLTHROUGH */
-	case BEACONT_POT:
-		aprs_obj_item(&ao, 1);
-		len_info = aprs_compose_pos_info(buf_info, &ao);
-		break;
-	case BEACONT_OBJ:
-		strlcpy(ao.ao_name, attrs->name, 10);
-		aprs_obj_item(&ao, 1);
-		len_info = aprs_compose_obj_info(buf_info, &ao);
-		break;
-	default:
-		/* TODO: unknown type */
-		return 0;
-	}
-
+	if (strcmp(ao->ao_source, ao->ao_name) == 0)
+		len_info = aprs_compose_pos_info(buf_info, ao);
+	else
+		len_info = aprs_compose_obj_info(buf_info, ao);
 
 	memcpy(&buf[16], buf_info, len_info);
 
-	memcpy(&buf[7], ax25_aton(attrs->call), AX25_ADDR_LEN);
+	memcpy(&buf[7], ax25_aton(conf.mycall), AX25_ADDR_LEN);
 	buf[13] |= 0xe1;
 
 	return 16 + len_info;
@@ -307,20 +274,36 @@ aprs_digipeat(char* pkt, int pktlen, struct aprs_interface *src)
 }
 
 void
-beacon_transmit(struct aprs_beacon_attrs *beacon_attrs)
+aprs_beacon_schedule(struct aprs_object *ao, int idx)
 {
-	unsigned char framebuf[512];
-	size_t framelen;
-	int i;
+	struct timespec now;
+	int offset;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	/* TODO: deal with decay algorithm here */
+	if (idx == -1) {
+		ao->ao_nexttime.tv_sec = now.tv_sec + conf.net_cycle;
+	} else {
+		offset = (conf.net_cycle * (idx + 1)) / (conf.num_entities + 1);
+		printf("offset is %d\n", offset);
+		ao->ao_nexttime.tv_sec = conf.station->ao_nexttime.tv_sec + offset;
+	}
+}
 
-	framelen = aprs_compose(framebuf, beacon_attrs);
+void
+aprs_beacon(struct aprs_object *ao, int idx)
+{
+	unsigned char pkt_ax25[512];
+	size_t len_ax25;
+	int i;
+	len_ax25 = aprs_compose(pkt_ax25, ao);
 	for (i = 0; i < naifs; i++)
-		if (write(aifs[i]->ai_fd, &framebuf, framelen) != framelen)
-			log_warnx("failed to send packet");
+		if (write(aifs[i]->ai_fd, &pkt_ax25, len_ax25) != len_ax25)
+			log_warn("failed to send packet on interface %s", aifs[i]->ai_name);
+	aprs_beacon_schedule(ao, idx);
 }
 
 static void *
-aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
+aprs_beacon_loop(void)
 {
 	struct kevent chlist[10];
 	struct kevent evlist[10];
@@ -337,7 +320,7 @@ aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 	for (ii = 0; ii < naifs; ii++)
 		EV_SET(&chlist[ii + 1], aifs[ii]->ai_fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, 0);
 
-	log_info("started up beacon loop (callsign: %s)", beacons[0]->call);
+	log_info("started up beacon loop (callsign: %s)", conf.mycall);
 
 	while ((nev = kevent(kq, chlist, naifs + 1, evlist, naifs + 1, NULL)) > 0) {
 		for (evi = 0; evi < nev; evi++) {
@@ -357,12 +340,11 @@ aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 				continue;
 			}
 			clock_gettime(CLOCK_MONOTONIC, &now);
-			for (bi = 0; bi < num_beacons; bi++) {
-				if (beacons[bi]->next_time <= now.tv_sec) {
-					beacon_transmit(beacons[bi]);
-					beacons[bi]->next_time = now.tv_sec + beacons[bi]->interval;
-				}
-			}
+			if (conf.station->ao_nexttime.tv_sec <= now.tv_sec)
+				aprs_beacon(conf.station, -1);
+			for (bi = 0; bi < conf.num_entities; bi++)
+				if (conf.entities[bi]->ao_nexttime.tv_sec <= now.tv_sec)
+					aprs_beacon(conf.entities[bi], bi);
 		}
 	}
 	fatal("kevent");
@@ -371,8 +353,7 @@ aprs_beacon_loop(int num_beacons, struct aprs_beacon_attrs *beacons[])
 int
 main(int argc, char **argv)
 {
-	struct aprsd_config conf;
-	struct aprs_beacon_attrs *beacons[20];
+	struct timeval now;
 	int ci, debug, skipdelay, verbose;
 	char ch, *conffile;
 
@@ -414,14 +395,14 @@ main(int argc, char **argv)
 
 	log_debug("log init");
 
-	char *call = argv[0];
+	if (ax25_aton(argv[0]) == NULL)
+		fatalx("invalid station address");
+	strlcpy(conf.mycall, argv[0], 10);
 
-	/* TODO: is this necessary or can it go in parse_config */
-	conf.num_beacons = 0;
+	conf.net_cycle = 600;
+
 	if (parse_config(conffile, &conf) == -1)
 		fatalx("could not parse config");
-	if (conf.num_beacons == 0)
-		fatal("refusing to run without beacons defined");
 
 	if (!debug)
 		daemonize();
@@ -434,43 +415,11 @@ main(int argc, char **argv)
 	if (pledge("stdio cpath wpath", NULL) == -1)
 		fatal("failed to pledge");
 
-	for (ci = 0; ci < conf.num_beacons; ci++) {
-		struct beacon_config *bc = conf.beacons[ci];
-		struct aprs_beacon_attrs *ba = malloc(sizeof(struct aprs_beacon_attrs));
-		beacons[ci] = ba;
-		ba->type = bc->type;
-		switch (ba->type) {
-		case BEACONT_OBJ:
-			ba->name = bc->name;
-			/* fallthrough */
-		case BEACONT_POT:
-		case BEACONT_PON:
-			ba->flags = bc->flags;
-			ba->interval = bc->interval;
-			if (skipdelay)
-				ba->next_time = 0;
-			else
-				ba->next_time = time(NULL) + (bc->interval / 2);
-			if ((bc->flags & BEACONF_POSSET) == BEACONF_POSSET) {
-				if (bc->flags & BEACONF_SOUTH) {
-					ba->fixed_lat = 0 - bc->latitude;
-				} else {
-					ba->fixed_lat = bc->latitude;
-				}
-				if (bc->flags & BEACONF_WEST) {
-					ba->fixed_lon = 0 - bc->longitude;
-				} else {
-					ba->fixed_lon = bc->longitude;
-				}
-			}
-			ba->sensor = bc->sensor;
-			ba->comment = bc->comment;
-			ba->call = call;
-			memcpy(ba->symbol, bc->symbol, 2);
-			break;
-		default:
-			fatal("unknown beacon type");
-		}
-	}
-	aprs_beacon_loop(conf.num_beacons, beacons);
+	aprs_beacon_schedule(conf.station, -1);
+	conf.station->ao_nexttime.tv_sec -= conf.net_cycle;
+	if (!skipdelay)
+		conf.station->ao_nexttime.tv_sec += conf.net_cycle / (conf.num_entities + 1);
+	for (ci = 0; ci < conf.num_entities; ci++)
+		aprs_beacon_schedule(conf.entities[ci], ci);
+	aprs_beacon_loop();
 }

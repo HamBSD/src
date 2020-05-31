@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -35,10 +36,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "aprs.h"
 #include "aprsd.h"
 
 static struct aprsd_config	*conf;
-static struct beacon_config	*curbeacon;
+static struct aprs_object	*curentity;
 static FILE			*fin = NULL;
 static int			 lineno = 1;
 static int			 errors = 0;
@@ -65,11 +67,10 @@ struct sym {
 
 int	 symset(const char *, const char *, int);
 char	*symget(const char *);
-int	 atoul(char *, u_long *);
 
 typedef struct {
 	union {
-		u_int32_t	 number;
+		long long	 number;
 		char		*string;
 		struct in_addr	 addr;
 	} v;
@@ -78,9 +79,8 @@ typedef struct {
 
 %}
 
-%token	ALTITUDE BEACON COMMENT EAST INTERVAL LATITUDE LONGITUDE
-%token	NAME NORTH NO_TIMESTAMP OBJECT POSITION SENSOR SOUTH SYMBOL
-%token	WEST
+%token	ALTITUDE BEACON COMMENT FIXED ITEM
+%token	SENSOR STATION SYMBOL
 %token	<v.string>	STRING
 %type	<v.number>	number
 %type	<v.string>	string
@@ -94,13 +94,15 @@ grammar		: /* empty */
 		;
 
 number		: STRING			{
-			u_long	ulval;
+			long long	 llval;
+			const char	*errstr;
 
-			if (atoul($1, &ulval) == -1) {
-				yyerror("%s is not a number", $1);
+			llval = strtonum($1, -180000001, 180000001, &errstr);
+			if (errstr != NULL) {
+				yyerror("error in number %s: %s", $1, errstr);
 				YYERROR;
 			} else
-				$$ = ulval;
+				$$ = llval;
 		}
 		;
 
@@ -121,115 +123,75 @@ varset		: STRING '=' string		{
 		}
 		;
 
-conf_main	: beacon
+conf_main	: station
+		| item
 		;
 
-beacon		: BEACON {
-			if (conf->num_beacons == MAX_BEACONS) {
-				yyerror("too many beacons defined");
+station		: STATION {
+	 		/* check if station was already defined */
+			if (conf->station != NULL) {
+				yyerror("found more than one station definition");
 				YYERROR;
 			}
-			if ((conf->beacons[conf->num_beacons] =
-			    malloc(sizeof(struct beacon_config))) == NULL)
+			curentity = malloc(sizeof(struct aprs_object));
+			if (curentity == NULL)
 				err(1, "malloc");
-			curbeacon = conf->beacons[conf->num_beacons];
-			curbeacon->comment = NULL;
-			curbeacon->name = NULL;
-			curbeacon->sensor = NULL;
-			curbeacon->flags = 0;
-			curbeacon->interval = 300;
-			curbeacon->symbol[0] = '/';
-			curbeacon->symbol[1] = '/';
-		} beacon_opts {
-			conf->num_beacons++;
+			aprs_obj_init(curentity);
+			aprs_obj_item(curentity, 1);
+		} obj_sym obj_pos obj_com {
+			conf->station = curentity;
 		}
 		;
 
-beacon_opts	: POSITION {
-			curbeacon->type = BEACONT_POT;
-		} beaposopts
-		| POSITION NO_TIMESTAMP {
-			curbeacon->type = BEACONT_PON;
-		} beaposopts
-		| OBJECT {
-			curbeacon->type = BEACONT_OBJ;
-		} beaobjopts
-		;
-
-beaposopts	: /* empty */
-		| beaposopts beaposopt
-		;
-
-beaobjopts	: /* empty */
-		| beaobjopts beaposopt
-		| beaobjopts NAME string {
-			curbeacon->name = strdup($3);
+item		: ITEM string {
+			curentity = malloc(sizeof(struct aprs_object));
+			if (curentity == NULL)
+				err(1, "malloc");
+			aprs_obj_init(curentity);
+			aprs_obj_name(curentity, $2);
+			aprs_obj_item(curentity, 1);
+		} obj_sym obj_pos obj_com {
+			conf->entities[conf->num_entities++] = curentity;
 		}
 		;
 
-beaposopt	: intervalopt
-		| sensoropt
-		| lonopt
-		| latopt
-		| commentopt
-		| symbolopt
-		;
-
-intervalopt	: INTERVAL number	{
-			curbeacon->interval = $2;
-		}
-		;
-
-sensoropt	: SENSOR string		{
-			curbeacon->sensor = strdup($2);
-		}
-		;
-
-latopt		: LATITUDE number	{
-			curbeacon->flags |= BEACONF_LATSET;
-			curbeacon->latitude = $2;
-		} latdir
-		;
-
-latdir		: /* empty */
-		| NORTH {
-			curbeacon->flags &= ~BEACONF_SOUTH;
-		}
-		| SOUTH {
-			curbeacon->flags |= BEACONF_SOUTH;
-		}
-		;
-
-lonopt		: LONGITUDE number	{
-			curbeacon->flags |= BEACONF_LONSET;
-			curbeacon->longitude = $2;
-		} londir
-		;
-
-londir		: /* empty */
-		| EAST {
-			curbeacon->flags &= ~BEACONF_WEST;
-		}
-		| WEST {
-			curbeacon->flags |= BEACONF_WEST;
-		}
-		;
-
-commentopt	: COMMENT string	{
-			curbeacon->comment = strdup($2);
-		}
-		;
-
-symbolopt	: SYMBOL string		{
-	  		if (strlen($2) != 2) {
-				yyerror("symbol must be exactly two characters");
+obj_sym		: SYMBOL string {
+			if (strlen($2) != 2 || aprs_obj_sym(curentity, $2) == -1) {
+				yyerror("error in parsing station symbol");
 				YYERROR;
 			}
-	  		curbeacon->symbol[0] = $2[0];
-			curbeacon->symbol[1] = $2[1];
+		}
+		| /* EMPTY */
+		;
+
+obj_pos		: FIXED number number number {
+			if (aprs_obj_pos(curentity, $2, $3, $4) == -1) {
+				yyerror("error in parsing station position with ambiguity");
+				YYERROR;
+			}
+		}
+		| FIXED number number {
+			if (aprs_obj_pos(curentity, $2, $3, 0) == -1) {
+				yyerror("error in parsing station position");
+				YYERROR;
+			}
+		}
+		| SENSOR string {
+			/* if (aprs_obj_sensor(curentity, $2) == -1) {
+				yyerror("error in parsing sensor for station position");
+				YYERROR;
+			} */
 		}
 		;
 
+obj_com		: COMMENT string {
+			if (aprs_obj_comment(curentity, $2) == -1) {
+				yyerror("error in parsing comment for station");
+				YYERROR;
+			}
+		}
+		| /* EMPTY */
+		;
 
 %%
 
@@ -266,21 +228,12 @@ lookup(char *s)
 	/* this has to be sorted always */
 	static const struct keywords keywords[] = {
 		{ "altitude",		ALTITUDE },
-		{ "beacon",		BEACON },
 		{ "comment",		COMMENT },
-		{ "east",		EAST },
-		{ "interval",		INTERVAL },
-		{ "latitude",		LATITUDE },
-		{ "longitude",		LONGITUDE },
-		{ "name",		NAME },
-		{ "no-timestamp",	NO_TIMESTAMP },
-		{ "north",		NORTH },
-		{ "object",		OBJECT },
-		{ "position",		POSITION },
+		{ "fixed",		FIXED },
+		{ "item",		ITEM },
 		{ "sensor",		SENSOR },
-		{ "south",		SOUTH },
+		{ "station",		STATION },
 		{ "symbol",		SYMBOL },
-		{ "west",		WEST },
 	};
 	const struct keywords	*p;
 
@@ -462,7 +415,7 @@ top:
 	x != '!' && x != '=' && x != '/' && x != '#' && \
 	x != ','))
 
-	if (isalnum(c) || c == ':' || c == '_') {
+	if (isalnum(c) || c == ':' || c == '_' || c == '-') {
 		do {
 			*p++ = c;
 			if ((unsigned)(p-buf) >= sizeof(buf)) {
@@ -602,20 +555,4 @@ symget(const char *nam)
 			return (sym->val);
 		}
 	return (NULL);
-}
-
-int
-atoul(char *s, u_long *ulvalp)
-{
-	u_long	 ulval;
-	char	*ep;
-
-	errno = 0;
-	ulval = strtoul(s, &ep, 0);
-	if (s[0] == '\0' || *ep != '\0')
-		return (-1);
-	if (errno == ERANGE && ulval == ULONG_MAX)
-		return (-1);
-	*ulvalp = ulval;
-	return (0);
 }
